@@ -17,13 +17,18 @@ let hInstance = GetModuleHandleW(nil)
 let className = Array("RecmeetMainWindow".utf16) + [WCHAR(0)]
 let windowTitle = Array("recmeet".utf16) + [WCHAR(0)]
 
+// IDC_ARROW = MAKEINTRESOURCE(32512). Swift's importer can't bring
+// MAKEINTRESOURCE through (function-like macro), so we recreate the value
+// inline as a low-bit-pattern pointer.
+let kIDC_ARROW: UnsafePointer<WCHAR>? = UnsafePointer(bitPattern: 32512)
+
 className.withUnsafeBufferPointer { classNamePtr in
     var wcex = WNDCLASSEXW()
     wcex.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
     wcex.style = UINT(CS_HREDRAW | CS_VREDRAW)
     wcex.lpfnWndProc = windowProc
     wcex.hInstance = hInstance
-    wcex.hCursor = LoadCursorW(nil, _IDC(IDC_ARROW))
+    wcex.hCursor = LoadCursorW(nil, kIDC_ARROW)
     wcex.hbrBackground = HBRUSH(bitPattern: UInt(COLOR_BTNFACE) + 1)
     wcex.lpszClassName = classNamePtr.baseAddress
 
@@ -54,21 +59,13 @@ className.withUnsafeBufferPointer { classNamePtr in
 // MARK: - Message loop
 
 var msg = MSG()
-while GetMessageW(&msg, nil, 0, 0) > 0 {
+// Swift on Windows imports BOOL as Bool, so we just check the truthy value.
+// (We lose the -1 error sentinel, but that's only set on bad HWNDs we never use.)
+while GetMessageW(&msg, nil, 0, 0) {
     TranslateMessage(&msg)
     DispatchMessageW(&msg)
 }
 
 #else
-import Foundation
 print("RecmeetWin32App is Windows-only. On macOS use RecmeetApp instead.")
-#endif
-
-// IDC_ARROW is `MAKEINTRESOURCEW(32512)` — a function-style macro Swift can't
-// import. We re-create it as a small Swift helper.
-#if os(Windows)
-@inline(__always)
-private func _IDC(_ id: Int32) -> LPCWSTR {
-    return UnsafePointer(bitPattern: Int(id))!
-}
 #endif

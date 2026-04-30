@@ -15,10 +15,11 @@ let ID_RECORD_BTN:       WORD = 105
 
 let ID_TIMER_ELAPSED: UINT_PTR = 1
 
-let WM_RECORD_STARTED: UINT = WM_USER + 1
-let WM_RECORD_STOPPED: UINT = WM_USER + 2
-let WM_MIX_DONE:       UINT = WM_USER + 3
-let WM_OP_FAILED:      UINT = WM_USER + 4
+// WM_USER is imported as Int32; promote before adding offsets.
+let WM_RECORD_STARTED: UINT = UINT(WM_USER) + 1
+let WM_RECORD_STOPPED: UINT = UINT(WM_USER) + 2
+let WM_MIX_DONE:       UINT = UINT(WM_USER) + 3
+let WM_OP_FAILED:      UINT = UINT(WM_USER) + 4
 
 // MARK: - Window proc
 
@@ -254,11 +255,12 @@ func refreshUI() {
     setControlText(appState.hwndOutputLabel, appState.outputDir.path)
     setControlText(appState.hwndGainLabel, "\(appState.gainPercent)%")
 
-    // Disable inputs while recording.
+    // Disable inputs while recording. EnableWindow takes a Bool here on
+    // Swift-Windows (BOOL is bridged to Bool).
     let enable = !appState.isRecording
-    EnableWindow(appState.hwndMicCheck,    enable ? 1 : 0)
-    EnableWindow(appState.hwndSysCheck,    enable ? 1 : 0)
-    EnableWindow(appState.hwndDeviceCombo, enable ? 1 : 0)
+    EnableWindow(appState.hwndMicCheck,    enable)
+    EnableWindow(appState.hwndSysCheck,    enable)
+    EnableWindow(appState.hwndDeviceCombo, enable)
 }
 
 // MARK: - Recording lifecycle
