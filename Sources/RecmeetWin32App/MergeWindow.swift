@@ -78,7 +78,7 @@ let mergeWndProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
     }
 }
 
-func registerMergeWindowClass(_ hInstance: HINSTANCE) -> Bool {
+func registerMergeWindowClass(_ hInstance: HINSTANCE?) -> Bool {
     var result: Bool = false
     MERGE_CLASS_NAME.withWide { wcls in
         var wcex = WNDCLASSEXW()
@@ -106,11 +106,18 @@ func presentMergeDialog(parent: HWND?, sessionPath: URL) {
 
     MERGE_CLASS_NAME.withWide { wcls in
         "Mix audio".withWide { wtitle in
+            // WS_POPUP is 0x80000000 — Swift imports it as UInt32, while the
+            // smaller WS_* style bits come in as Int32. Compose via bitPattern
+            // so the OR'd value lands in the signed range DWORD's init expects
+            // on this Swift-on-Windows toolchain.
+            let style: DWORD = DWORD(
+                Int32(bitPattern: WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE)
+            )
             let hwnd = CreateWindowExW(
                 DWORD(WS_EX_DLGMODALFRAME),
                 wcls,
                 wtitle,
-                DWORD(WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE),
+                style,
                 CW_USEDEFAULT, CW_USEDEFAULT,
                 480, 240,
                 parent,

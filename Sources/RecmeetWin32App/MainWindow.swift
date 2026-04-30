@@ -336,7 +336,6 @@ private func startStopRequested(start: Bool) {
         appState.statusText = "Stopping…"
         refreshUI()
 
-        let session = appState.sessionPath
         let mic = appState.mic
         let system = appState.system
         appState.mic = nil
