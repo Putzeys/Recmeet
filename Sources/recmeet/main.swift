@@ -21,13 +21,25 @@ func usage() -> Never {
           List input devices.
 
       recmeet record [--mic NAME] [--output DIR] [--no-system] [--no-mic]
+                     [--no-merge] [--keep-tracks]
+                     [--mic-volume N] [--system-volume N]
           Start recording. Press Ctrl+C to stop.
-          --mic NAME      Substring match against device name. Default: system default.
-          --output DIR    Output folder. Default: ~/Recordings/recmeet/<timestamp>/
-          --no-system     Skip system-audio capture.
-          --no-mic        Skip microphone capture.
+          --mic NAME         Substring match against device name. Default: system default.
+          --output DIR       Output folder. Default: ~/Recordings/recmeet/<timestamp>/
+          --no-system        Skip system-audio capture.
+          --no-mic           Skip microphone capture.
+          --no-merge         Don't auto-mix mic+system at stop. Keep separate WAVs.
+          --keep-tracks      After mixing, keep the original mic_*.wav / system_*.wav.
+          --mic-volume N     Mix volume for the mic, 0..200 (default 100).
+          --system-volume N  Mix volume for the system, 0..200 (default 100).
 
-    Output: WAV chunks of 30 minutes each, named mic_NNN.wav and system_NNN.wav.
+      recmeet merge <session-dir> [--mic-volume N] [--system-volume N] [--keep-tracks]
+          Re-mix an existing session into a new mixed.wav.
+
+    Output:
+      • mic_NNN.wav / system_NNN.wav — 30-min WAV chunks per source
+      • mixed.wav — single combined stereo WAV (when both sources captured
+        and --no-merge is not set; originals removed unless --keep-tracks)
     """
     FileHandle.standardError.write(Data((txt + "\n").utf8))
     exit(2)
@@ -137,6 +149,54 @@ func runRecord() async {
     mic?.stop()
     await system?.stop()
     Log.info("Saved to \(session.path)")
+
+    if captureMic && captureSystem && !flag("--no-merge") {
+        await mixSession(
+            session: session,
+            micVolume: parseVolume("--mic-volume"),
+            systemVolume: parseVolume("--system-volume"),
+            keepSeparateTracks: flag("--keep-tracks")
+        )
+    }
+}
+
+private func parseVolume(_ name: String) -> Float {
+    guard let raw = opt(name), let n = Int(raw) else { return 1.0 }
+    return Float(max(0, min(200, n))) / 100
+}
+
+private func mixSession(session: URL, micVolume: Float, systemVolume: Float, keepSeparateTracks: Bool) async {
+    Log.info(String(format: "Mixing… (mic %.0f%%, system %.0f%%)", micVolume * 100, systemVolume * 100))
+    let opts = SessionMixer.Options(
+        micVolume: micVolume,
+        systemVolume: systemVolume,
+        keepSeparateTracks: keepSeparateTracks
+    )
+    do {
+        let result = try await SessionMixer.merge(sessionDir: session, options: opts) { _ in }
+        Log.info("Mixed → \(result.path)")
+    } catch {
+        Log.error("Mix failed: \(error.localizedDescription)")
+    }
+}
+
+func runMerge() async {
+    guard let target = rest.first else {
+        Log.error("Usage: recmeet merge <session-dir> [--mic-volume N] [--system-volume N] [--keep-tracks]")
+        exit(2)
+    }
+    let session = URL(fileURLWithPath: expandTilde(target))
+    var dir = ObjCBool(false)
+    guard FileManager.default.fileExists(atPath: session.path, isDirectory: &dir), dir.boolValue else {
+        Log.error("Not a directory: \(session.path)")
+        exit(1)
+    }
+    await mixSession(
+        session: session,
+        micVolume: parseVolume("--mic-volume"),
+        systemVolume: parseVolume("--system-volume"),
+        keepSeparateTracks: flag("--keep-tracks")
+    )
 }
 
 private func expandTilde(_ path: String) -> String {
@@ -179,6 +239,8 @@ case "devices":
     runDevices()
 case "record":
     await runRecord()
+case "merge":
+    await runMerge()
 case "-h", "--help", "help":
     usage()
 default:
