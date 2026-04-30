@@ -5,6 +5,17 @@ REM both rc.exe and swift are on PATH.
 setlocal
 cd /d "%~dp0"
 
+REM Close any running instance so the linker can overwrite the .exe.
+taskkill /IM RecmeetWin32App.exe >nul 2>&1
+if errorlevel 1 (
+    REM Wasn't running — that's fine.
+    set _RECMEET_WAS_RUNNING=0
+) else (
+    REM Give Windows a moment to release the file handle.
+    timeout /t 1 /nobreak >nul
+    set _RECMEET_WAS_RUNNING=1
+)
+
 if not exist .build mkdir .build
 
 echo === Compiling icon resource (rc.exe) ===
