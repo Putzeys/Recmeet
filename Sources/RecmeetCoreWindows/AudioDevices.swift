@@ -132,7 +132,7 @@ public enum AudioDevices {
         var key = recmeet_PKEY_Device_FriendlyName
         var prop = PROPVARIANT()
         recmeet_PropVariantInit(&prop)
-        defer { PropVariantClear(&prop) }
+        defer { _ = recmeet_PropVariantClear(&prop) }
 
         guard store.pointee.lpVtbl.pointee.GetValue(store, &key, &prop) >= 0 else { return nil }
         guard prop.vt == recmeet_VT_LPWSTR else { return nil }

@@ -5,12 +5,12 @@
 
 #ifdef _WIN32
 
+// Order matters: propsys.h must come before mmdeviceapi.h because the latter
+// uses IPropertyStore** in OpenPropertyStore.
 #include <windows.h>
+#include <propsys.h>
 #include <mmdeviceapi.h>
 #include <audioclient.h>
-#include <functiondiscoverykeys_devpkey.h>
-#include <propvarutil.h>
-#include <propkey.h>
 
 // Macros not importable into Swift — exposed as concrete constants.
 extern const DWORD    recmeet_CLSCTX_ALL;
@@ -22,11 +22,14 @@ extern const VARTYPE  recmeet_VT_LPWSTR;
 extern const HRESULT  recmeet_E_FAIL;
 extern const HRESULT  recmeet_S_OK;
 
-// `PropVariantInit` is a function-like macro on MSVC; wrap as a real function.
-void recmeet_PropVariantInit(PROPVARIANT *p);
+// PropVariantInit / PropVariantClear are macros or live in propvarutil.h
+// (which has its own include-ordering pain). We supply local equivalents
+// for the only PROPVARIANT shape recmeet ever sees (VT_LPWSTR).
+void    recmeet_PropVariantInit(PROPVARIANT *p);
+HRESULT recmeet_PropVariantClear(PROPVARIANT *p);
 
-// `PKEY_Device_FriendlyName` is normally provided by linking propsys.lib;
-// re-expose the storage so Swift can take its address.
+// PKEY_Device_FriendlyName, defined manually so we don't need propkey.h /
+// functiondiscoverykeys_devpkey.h.
 extern const PROPERTYKEY recmeet_PKEY_Device_FriendlyName;
 
 #endif // _WIN32

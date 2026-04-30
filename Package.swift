@@ -41,8 +41,7 @@ let package = Package(
             ],
             path: "Sources/RecmeetCoreWindows",
             linkerSettings: [
-                .linkedLibrary("ole32",   .when(platforms: [.windows])),
-                .linkedLibrary("propsys", .when(platforms: [.windows])),
+                .linkedLibrary("ole32", .when(platforms: [.windows])),
             ]
         ),
 

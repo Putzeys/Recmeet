@@ -3,8 +3,8 @@
 // `INITGUID` makes every `DEFINE_GUID(...)` in the included headers emit a
 // concrete definition into THIS translation unit. That's how we get
 // `CLSID_MMDeviceEnumerator`, `IID_IAudioClient`, `IID_IMMDeviceEnumerator`,
-// `IID_IAudioCaptureClient`, and `PKEY_Device_FriendlyName` linked into
-// the app without depending on extra GUID libraries.
+// `IID_IAudioCaptureClient` linked into the binary without an extra GUID
+// library.
 #define INITGUID
 
 #include "CWASAPI.h"
@@ -21,6 +21,19 @@ const HRESULT recmeet_S_OK                        = S_OK;
 
 void recmeet_PropVariantInit(PROPVARIANT *p) {
     memset(p, 0, sizeof(PROPVARIANT));
+}
+
+// We only ever read VT_LPWSTR PROPVARIANTs (device friendly names). This
+// matches what the real PropVariantClear does for that variant: free the
+// COM-allocated wide string and zero the union. Avoids depending on
+// propvarutil.h, whose include chain pulls in shtypes.h transitively.
+HRESULT recmeet_PropVariantClear(PROPVARIANT *p) {
+    if (p == NULL) return S_OK;
+    if (p->vt == VT_LPWSTR && p->pwszVal != NULL) {
+        CoTaskMemFree(p->pwszVal);
+    }
+    memset(p, 0, sizeof(PROPVARIANT));
+    return S_OK;
 }
 
 const PROPERTYKEY recmeet_PKEY_Device_FriendlyName = {
