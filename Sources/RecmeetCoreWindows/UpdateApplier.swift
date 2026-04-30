@@ -118,6 +118,12 @@ public enum WindowsUpdateApplier {
         )
         echo [bat] move OK >> "%LOG%"
 
+        rem Strip the Mark of the Web that URLSession attached. Without this,
+        rem SmartScreen silently blocks the new .exe when start launches it.
+        echo [bat] removing Mark of the Web >> "%LOG%"
+        del "\(dstPath):Zone.Identifier" 2>nul
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "Unblock-File -Path '\(dstPath)'" >> "%LOG%" 2>&1
+
         echo [bat] launching "\(dstPath)" >> "%LOG%"
         start "" "\(dstPath)"
 
