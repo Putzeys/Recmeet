@@ -14,11 +14,6 @@ final class AppState {
     var gainPercent: Int = 100             // 0–200
     var outputDir: URL = defaultOutputDir()
 
-    // Mix configuration (used after stop, when both sources captured).
-    var micMixPercent: Int = 100           // 0–100
-    var systemMixPercent: Int = 100        // 0–100
-    var keepSeparateTracks: Bool = false
-
     var devices: [AudioInputDevice] = []
     var selectedDeviceIndex: Int = 0
 
@@ -26,8 +21,6 @@ final class AppState {
     var mic: MicRecorder?
     var system: SystemRecorder?
     var isRecording: Bool = false
-    var hasRecordedSession: Bool = false   // post-stop, awaiting mix decision
-    var bothCapturedInLastSession: Bool = false
     var isMixing: Bool = false
     var startTime: Date?
     var sessionPath: URL?
@@ -44,15 +37,8 @@ final class AppState {
     var hwndOutputLabel: HWND?
     var hwndOpenFolderBtn: HWND?
     var hwndRecordBtn: HWND?
-    var hwndDontMergeBtn: HWND?
     var hwndStatusLabel: HWND?
     var hwndElapsedLabel: HWND?
-
-    var hwndMicMixSlider: HWND?
-    var hwndMicMixLabel: HWND?
-    var hwndSysMixSlider: HWND?
-    var hwndSysMixLabel: HWND?
-    var hwndKeepTracksCheck: HWND?
 
     init() {
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)

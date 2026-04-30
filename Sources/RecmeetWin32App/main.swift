@@ -37,6 +37,10 @@ className.withUnsafeBufferPointer { classNamePtr in
         exit(1)
     }
 
+    if !registerMergeWindowClass(hInstance) {
+        FileHandle.standardError.write(Data("recmeet: failed to register merge dialog class\n".utf8))
+    }
+
     windowTitle.withUnsafeBufferPointer { titlePtr in
         let hwnd = CreateWindowExW(
             0,
@@ -44,7 +48,7 @@ className.withUnsafeBufferPointer { classNamePtr in
             titlePtr.baseAddress,
             DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX),
             CW_USEDEFAULT, CW_USEDEFAULT,
-            500, 510,
+            480, 400,
             nil, nil, hInstance, nil
         )
         guard hwnd != nil else {
