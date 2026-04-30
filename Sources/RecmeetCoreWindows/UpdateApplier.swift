@@ -1,6 +1,9 @@
 #if os(Windows)
 import WinSDK
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import RecmeetCore
 
 public enum WindowsUpdateApplier {
