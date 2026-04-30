@@ -55,7 +55,9 @@ className.withUnsafeBufferPointer { classNamePtr in
             FileHandle.standardError.write(Data("recmeet: CreateWindowExW failed\n".utf8))
             exit(1)
         }
-        ShowWindow(hwnd, SW_SHOWNORMAL)
+        // Tray-only by default — the tray icon is enough surface for the
+        // 90% case (start/stop). User opens the config window from the
+        // tray menu when they need it.
         UpdateWindow(hwnd)
     }
 }

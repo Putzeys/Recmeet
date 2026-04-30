@@ -29,7 +29,31 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         appState.hwndMain = hwnd
         createControls(parent: hwnd)
         refreshUI()
+        installTrayIcon(parent: hwnd)
         startUpdateCheck(parent: hwnd)
+        return 0
+
+    case WM_TRAYICON:
+        // lParam carries the actual mouse event from the shell.
+        let mouseMsg = UINT(lParam & 0xFFFF)
+        switch Int32(mouseMsg) {
+        case WM_LBUTTONUP:
+            // Single click toggles main window visibility.
+            if IsWindowVisible(hwnd) {
+                ShowWindow(hwnd, SW_HIDE)
+            } else {
+                showMainWindow(parent: hwnd)
+            }
+        case WM_RBUTTONUP, WM_CONTEXTMENU:
+            showTrayPopupMenu(parent: hwnd)
+        default:
+            break
+        }
+        return 0
+
+    case UINT(WM_CLOSE):
+        // X button hides — quit only via the tray menu.
+        ShowWindow(hwnd, SW_HIDE)
         return 0
 
     case WM_UPDATE_AVAILABLE:
@@ -90,6 +114,7 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         return 0
 
     case UINT(WM_DESTROY):
+        removeTrayIcon()
         PostQuitMessage(0)
         return 0
 
@@ -211,6 +236,16 @@ private func createControls(parent: HWND?) {
 // MARK: - Command routing
 
 private func handleCommand(id: WORD, notification: WORD) {
+    // Tray-menu IDs route through their own handler so MainWindow keeps
+    // its switch focused on its child controls.
+    switch id {
+    case ID_TRAY_RECORD, ID_TRAY_SHOW, ID_TRAY_REVEAL, ID_TRAY_UPDATES, ID_TRAY_QUIT:
+        handleTrayCommand(id: id, parent: appState.hwndMain)
+        return
+    default:
+        break
+    }
+
     switch id {
     case ID_RECORD_BTN:
         if appState.isMixing { return }
