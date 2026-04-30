@@ -86,6 +86,7 @@ let package = Package(
                 .target(name: "RecmeetCoreWindows", condition: .when(platforms: [.windows])),
             ],
             path: "Sources/RecmeetWin32App",
+            exclude: ["recmeet.rc", "recmeet.ico"],
             linkerSettings: [
                 .linkedLibrary("comctl32", .when(platforms: [.windows])),
                 .linkedLibrary("shell32",  .when(platforms: [.windows])),
