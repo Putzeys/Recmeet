@@ -1,10 +1,14 @@
 #ifdef _WIN32
 
-// Compiled as ordinary C — include order works the way Microsoft's headers
-// expect it to. INITGUID makes every DEFINE_GUID(...) emit definitions in
-// THIS translation unit, so we don't need to link mmdevapi.lib / uuid.lib.
-// COBJMACROS lets us call interface methods as IMMDevice_GetId(p, ...).
-#define INITGUID
+// Compiled as ordinary C. COBJMACROS lets us call interface methods as
+// IMMDevice_GetId(p, ...) instead of dancing through ->lpVtbl->GetId.
+//
+// We deliberately do NOT use INITGUID here — clang on Windows did not expand
+// DEFINE_GUID into storage definitions reliably, leaving us with linker
+// errors for CLSID_MMDeviceEnumerator etc. Instead, we provide explicit
+// definitions for every GUID we reference. The headers themselves only
+// declare them (DEFINE_GUID without INITGUID = `extern const GUID`), so
+// there is no duplicate-definition conflict.
 #define COBJMACROS
 
 #include <windows.h>
@@ -16,6 +20,26 @@
 #include <wchar.h>
 
 #include "CWASAPI.h"
+
+// MARK: - GUID storage definitions (would normally come from mmdevapi.lib /
+// uuid.lib, but we don't take that dependency).
+
+const CLSID CLSID_MMDeviceEnumerator = {
+    0xBCDE0395, 0xE52F, 0x467C,
+    { 0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E }
+};
+const IID IID_IMMDeviceEnumerator = {
+    0xA95664D2, 0x9614, 0x4F35,
+    { 0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6 }
+};
+const IID IID_IAudioClient = {
+    0x1CB9AD4C, 0xDBFA, 0x4C32,
+    { 0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2 }
+};
+const IID IID_IAudioCaptureClient = {
+    0xC8ADBD64, 0xE71E, 0x48A0,
+    { 0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17 }
+};
 
 // PKEY_Device_FriendlyName, defined manually so we don't need
 // functiondiscoverykeys_devpkey.h (and its include-chain pain).
