@@ -2,6 +2,12 @@ import Foundation
 import Dispatch
 import RecmeetCore
 
+#if os(macOS)
+import RecmeetCoreApple
+#elseif os(Windows)
+import RecmeetCoreWindows
+#endif
+
 // MARK: - Argv parsing
 
 let args = Array(CommandLine.arguments.dropFirst())
@@ -38,7 +44,6 @@ func flag(_ name: String) -> Bool { rest.contains(name) }
 
 // MARK: - Commands
 
-@MainActor
 func runDevices() {
     let inputs = AudioDevices.listInputs()
     if inputs.isEmpty {
@@ -47,12 +52,11 @@ func runDevices() {
     }
     for d in inputs {
         let star = d.isDefault ? "*" : " "
-        print("\(star) [\(d.id)] \(d.name)  (\(d.inputChannels)ch)")
+        print("\(star) \(d.name)  (\(d.inputChannels)ch)")
     }
     print("\n* = system default. Pass --mic with any substring of the name.")
 }
 
-@MainActor
 func runRecord() async {
     let captureMic = !flag("--no-mic")
     let captureSystem = !flag("--no-system")
@@ -61,10 +65,9 @@ func runRecord() async {
         exit(2)
     }
 
-    // Output directory
     let outputBase: URL
     if let custom = opt("--output") {
-        outputBase = URL(fileURLWithPath: (custom as NSString).expandingTildeInPath)
+        outputBase = URL(fileURLWithPath: expandTilde(custom))
     } else {
         outputBase = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Recordings/recmeet")
@@ -75,7 +78,6 @@ func runRecord() async {
     try? FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
     Log.info("Session: \(session.path)")
 
-    // Mic device
     var micDevice: AudioInputDevice?
     if captureMic, let name = opt("--mic") {
         guard let dev = AudioDevices.find(byName: name) else {
@@ -85,7 +87,7 @@ func runRecord() async {
         micDevice = dev
     }
 
-    // Permissions
+    #if os(macOS)
     if captureMic {
         guard await Permissions.requestMicrophone() else {
             Log.error("Microphone permission denied. Enable it in System Settings → Privacy & Security → Microphone.")
@@ -95,6 +97,7 @@ func runRecord() async {
     if captureSystem {
         guard await Permissions.ensureScreenRecording() else { exit(1) }
     }
+    #endif
 
     let mic: MicRecorder? = captureMic ? MicRecorder(outputDir: session, device: micDevice) : nil
     let system: SystemRecorder? = captureSystem ? SystemRecorder(outputDir: session) : nil
@@ -109,34 +112,26 @@ func runRecord() async {
         exit(1)
     }
 
-    // Write meta.json
     var meta: [String: Any] = [
         "started_at": ISO8601DateFormatter().string(from: Date()),
         "mic": captureMic,
         "system": captureSystem,
     ]
-    if let m = mic { meta["mic_device"] = micDevice?.name ?? "default"; meta["mic_sample_rate"] = m.sampleRate; meta["mic_channels"] = m.channels }
-    if captureSystem { meta["system_sample_rate"] = 48000; meta["system_channels"] = 2 }
+    if let m = mic {
+        meta["mic_device"] = micDevice?.name ?? "default"
+        meta["mic_sample_rate"] = m.sampleRate
+        meta["mic_channels"] = m.channels
+    }
+    if captureSystem {
+        meta["system_sample_rate"] = 48000
+        meta["system_channels"] = 2
+    }
     if let json = try? JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted]) {
         try? json.write(to: session.appendingPathComponent("meta.json"))
     }
 
     Log.info("Recording. Press Ctrl+C to stop.")
-
-    // SIGINT → graceful stop. Ignore default handler so the dispatch source receives it.
-    signal(SIGINT, SIG_IGN)
-    let signalQueue = DispatchQueue(label: "recmeet.signal")
-    let sigSrc = DispatchSource.makeSignalSource(signal: SIGINT, queue: signalQueue)
-    let sem = DispatchSemaphore(value: 0)
-    sigSrc.setEventHandler { sem.signal() }
-    sigSrc.resume()
-
-    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-        DispatchQueue.global().async {
-            sem.wait()
-            cont.resume()
-        }
-    }
+    await waitForInterrupt()
 
     Log.info("Stopping…")
     mic?.stop()
@@ -144,11 +139,44 @@ func runRecord() async {
     Log.info("Saved to \(session.path)")
 }
 
+private func expandTilde(_ path: String) -> String {
+    #if os(macOS) || os(Linux)
+    return (path as NSString).expandingTildeInPath
+    #else
+    if path.hasPrefix("~"),
+       let home = ProcessInfo.processInfo.environment["USERPROFILE"]
+                  ?? ProcessInfo.processInfo.environment["HOME"] {
+        return home + path.dropFirst()
+    }
+    return path
+    #endif
+}
+
+private func waitForInterrupt() async {
+    #if os(macOS) || os(Linux)
+    signal(SIGINT, SIG_IGN)
+    let signalQueue = DispatchQueue(label: "recmeet.signal")
+    let sigSrc = DispatchSource.makeSignalSource(signal: SIGINT, queue: signalQueue)
+    let sem = DispatchSemaphore(value: 0)
+    sigSrc.setEventHandler { sem.signal() }
+    sigSrc.resume()
+    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+        DispatchQueue.global().async {
+            sem.wait()
+            cont.resume()
+        }
+    }
+    #else
+    // Windows: SetConsoleCtrlHandler-based shutdown.
+    await WindowsConsole.waitForCtrlC()
+    #endif
+}
+
 // MARK: - Dispatch
 
 switch cmd {
 case "devices":
-    await runDevices()
+    runDevices()
 case "record":
     await runRecord()
 case "-h", "--help", "help":

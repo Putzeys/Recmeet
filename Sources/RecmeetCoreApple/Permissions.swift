@@ -3,6 +3,7 @@ import AVFoundation
 import ScreenCaptureKit
 import CoreGraphics
 import AppKit
+import RecmeetCore
 
 public enum Permissions {
     /// Request microphone permission. Blocks until user responds.

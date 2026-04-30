@@ -1,10 +1,9 @@
 import Foundation
-import AVFoundation
 
 /// Writes interleaved 16-bit PCM into a sequence of WAV files.
 /// Rotates to a new file when `secondsPerChunk` is reached so we never hit
 /// the 4 GB WAV size limit and so a crash leaves valid chunks on disk.
-final class WAVChunkWriter {
+public final class WAVChunkWriter {
     private let directory: URL
     private let prefix: String
     private let sampleRate: Double
@@ -19,7 +18,7 @@ final class WAVChunkWriter {
 
     private let queue = DispatchQueue(label: "recmeet.wavwriter")
 
-    init(directory: URL, prefix: String, sampleRate: Double, channels: UInt32, secondsPerChunk: Double = 1800) throws {
+    public init(directory: URL, prefix: String, sampleRate: Double, channels: UInt32, secondsPerChunk: Double = 1800) throws {
         self.directory = directory
         self.prefix = prefix
         self.sampleRate = sampleRate
@@ -30,7 +29,7 @@ final class WAVChunkWriter {
     }
 
     /// Append interleaved Int16 samples.
-    func writeInt16(_ data: Data) {
+    public func writeInt16(_ data: Data) {
         queue.sync {
             do {
                 if currentHandle == nil { try openNewChunk() }
@@ -47,7 +46,7 @@ final class WAVChunkWriter {
         }
     }
 
-    func close() {
+    public func close() {
         queue.sync {
             do { try finalizeCurrent() } catch { Log.error("WAV finalize failed: \(error)") }
         }
@@ -113,41 +112,3 @@ final class WAVChunkWriter {
     }
 }
 
-/// Helpers to convert AVAudioPCMBuffer (Float32) into interleaved Int16 little-endian.
-enum PCM {
-    static func interleavedInt16LE(from buffer: AVAudioPCMBuffer) -> Data? {
-        let frameCount = Int(buffer.frameLength)
-        let channelCount = Int(buffer.format.channelCount)
-        guard frameCount > 0 else { return Data() }
-
-        // Float32 path (AVAudioEngine default)
-        if let floatChannels = buffer.floatChannelData {
-            var out = Data(count: frameCount * channelCount * 2)
-            out.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-                let dst = raw.bindMemory(to: Int16.self).baseAddress!
-                for f in 0..<frameCount {
-                    for c in 0..<channelCount {
-                        let s = max(-1.0, min(1.0, floatChannels[c][f]))
-                        dst[f * channelCount + c] = Int16(s * 32767.0)
-                    }
-                }
-            }
-            return out
-        }
-
-        // Already Int16 (rare but possible)
-        if let int16Channels = buffer.int16ChannelData {
-            var out = Data(count: frameCount * channelCount * 2)
-            out.withUnsafeMutableBytes { (raw: UnsafeMutableRawBufferPointer) in
-                let dst = raw.bindMemory(to: Int16.self).baseAddress!
-                for f in 0..<frameCount {
-                    for c in 0..<channelCount {
-                        dst[f * channelCount + c] = int16Channels[c][f]
-                    }
-                }
-            }
-            return out
-        }
-        return nil
-    }
-}

@@ -92,11 +92,28 @@ recmeet is a local-only tool. Concretely:
 If any of the above ever stops being true, that is a bug. See
 [SECURITY.md](SECURITY.md) for how to report it.
 
+## Windows
+
+A Windows CLI build is available (the SwiftUI app is macOS-only for now;
+a separate cross-platform GUI lands in v0.3).
+
+- Same Swift codebase, conditionally compiled with `#if os(Windows)`
+- System audio uses **WASAPI loopback** — the OS-native one, no virtual
+  audio driver required
+- Microphone uses WASAPI capture against the chosen endpoint
+
+```cmd
+swift build -c release --product recmeet
+.\.build\release\recmeet.exe devices
+.\.build\release\recmeet.exe record --output C:\Recordings
+```
+
 ## Roadmap
 
-- [ ] `--format m4a` — encode chunks to AAC via AVAssetWriter on stop
-- [ ] `recmeet merge <session>` — concat chunks into single file
-- [ ] Windows port using WASAPI loopback (separate binary, same CLI)
+- [ ] `--format m4a` — encode chunks to AAC on stop
+- [ ] `recmeet merge <session>` — re-mix from CLI
+- [x] Windows CLI port (WASAPI loopback)
+- [ ] Windows GUI (v0.3 — SwiftCrossUI vs WinUI host TBD)
 - [ ] Optional Whisper transcription pipeline
 
 ## License

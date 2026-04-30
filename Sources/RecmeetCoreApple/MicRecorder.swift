@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CoreAudio
+import RecmeetCore
 
 /// Captures the system input device (or a chosen one) via AVAudioEngine and
 /// streams interleaved 16-bit PCM into a WAVChunkWriter at the device's native

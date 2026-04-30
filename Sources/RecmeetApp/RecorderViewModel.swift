@@ -3,6 +3,7 @@ import AppKit
 import Combine
 import CoreAudio
 import RecmeetCore
+import RecmeetCoreApple
 
 @MainActor
 final class RecorderViewModel: ObservableObject {
