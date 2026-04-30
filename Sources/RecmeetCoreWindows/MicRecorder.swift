@@ -26,9 +26,12 @@ public final class MicRecorder {
     }
 
     public func start() throws {
+        Log.info("MicRecorder.start: opening input handle (id len=\(preferredDevice?.id.count ?? 0))")
         guard let dev = AudioDevices.openInputHandle(id: preferredDevice?.id) else {
+            Log.error("MicRecorder.start: openInputHandle returned nil")
             throw COMError(hr: recmeet_E_FAIL, context: "No microphone device available")
         }
+        Log.info("MicRecorder.start: opened device, building WASAPICapture")
         let capture = try WASAPICapture(
             device: dev,
             mode: .capture,
@@ -36,7 +39,9 @@ public final class MicRecorder {
             filePrefix: "mic",
             levelMonitor: levelMonitor
         )
+        Log.info("MicRecorder.start: WASAPICapture built, calling capture.start()")
         try capture.start()
+        Log.info("MicRecorder.start: capture.start() OK")
         self.capture = capture
         Log.info("Mic recording at \(capture.sampleRate) Hz, \(capture.channels)ch (WASAPI)")
     }

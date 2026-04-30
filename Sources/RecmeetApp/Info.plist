@@ -26,6 +26,8 @@
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>LSUIElement</key>
+    <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>recmeet needs microphone access to record your voice during meetings.</string>
     <key>NSScreenCaptureUsageDescription</key>

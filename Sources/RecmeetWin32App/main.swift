@@ -2,6 +2,11 @@ import Foundation
 
 #if os(Windows)
 import WinSDK
+import RecmeetCore
+
+// Mirror every RecmeetCore Log call into the Windows app log so we can see
+// recorder-internal failures too (stderr is /dev/null under SUBSYSTEM:WINDOWS).
+Log.sink = { msg in appLog("core: \(msg)") }
 
 // MARK: - Common Controls registration
 
@@ -55,7 +60,9 @@ className.withUnsafeBufferPointer { classNamePtr in
             FileHandle.standardError.write(Data("recmeet: CreateWindowExW failed\n".utf8))
             exit(1)
         }
-        ShowWindow(hwnd, SW_SHOWNORMAL)
+        // Tray-only by default — the tray icon is enough surface for the
+        // 90% case (start/stop). User opens the config window from the
+        // tray menu when they need it.
         UpdateWindow(hwnd)
     }
 }

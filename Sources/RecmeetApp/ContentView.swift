@@ -3,8 +3,8 @@ import RecmeetCore
 import RecmeetCoreApple
 
 struct ContentView: View {
-    @StateObject private var vm = RecorderViewModel()
-    @StateObject private var updates = UpdateChecker()
+    @EnvironmentObject private var vm: RecorderViewModel
+    @EnvironmentObject private var updates: UpdateChecker
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {

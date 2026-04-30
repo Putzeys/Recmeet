@@ -29,7 +29,31 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         appState.hwndMain = hwnd
         createControls(parent: hwnd)
         refreshUI()
+        installTrayIcon(parent: hwnd)
         startUpdateCheck(parent: hwnd)
+        return 0
+
+    case WM_TRAYICON:
+        // lParam carries the actual mouse event from the shell.
+        let mouseMsg = UINT(lParam & 0xFFFF)
+        switch Int32(mouseMsg) {
+        case WM_LBUTTONUP:
+            // Single click toggles main window visibility.
+            if IsWindowVisible(hwnd) {
+                ShowWindow(hwnd, SW_HIDE)
+            } else {
+                showMainWindow(parent: hwnd)
+            }
+        case WM_RBUTTONUP, WM_CONTEXTMENU:
+            showTrayPopupMenu(parent: hwnd)
+        default:
+            break
+        }
+        return 0
+
+    case UINT(WM_CLOSE):
+        // X button hides — quit only via the tray menu.
+        ShowWindow(hwnd, SW_HIDE)
         return 0
 
     case WM_UPDATE_AVAILABLE:
@@ -90,6 +114,7 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         return 0
 
     case UINT(WM_DESTROY):
+        removeTrayIcon()
         PostQuitMessage(0)
         return 0
 
@@ -211,6 +236,16 @@ private func createControls(parent: HWND?) {
 // MARK: - Command routing
 
 private func handleCommand(id: WORD, notification: WORD) {
+    // Tray-menu IDs route through their own handler so MainWindow keeps
+    // its switch focused on its child controls.
+    switch id {
+    case ID_TRAY_RECORD, ID_TRAY_SHOW, ID_TRAY_REVEAL, ID_TRAY_UPDATES, ID_TRAY_QUIT:
+        handleTrayCommand(id: id, parent: appState.hwndMain)
+        return
+    default:
+        break
+    }
+
     switch id {
     case ID_RECORD_BTN:
         if appState.isMixing { return }
@@ -294,7 +329,15 @@ private func startStopRequested(start: Bool) {
         let stamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
         let session = appState.outputDir.appendingPathComponent(stamp)
-        try? FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+            appLog("session dir created: \(session.path)")
+        } catch {
+            appLog("FAILED creating session dir: \(error)")
+            appState.statusText = "Folder error: \(error.localizedDescription)"
+            refreshUI()
+            return
+        }
         appState.sessionPath = session
         appState.mergedFile = nil
 
@@ -303,29 +346,62 @@ private func startStopRequested(start: Bool) {
         let device = appState.selectedDevice
         let gain = Float(appState.gainPercent) / 100
 
-        // Flip isRecording immediately so the button shows "Stop" and a
-        // double-click can't kick off a second start. We don't have a Swift
-        // MainActor executor wired into Win32's message loop, so we stay
-        // off the main actor entirely and use PostMessage as the handshake.
+        appLog("startStopRequested(start: true)")
+        appLog("  captureMic=\(captureMic) captureSystem=\(captureSystem)")
+        appLog("  device=\(device?.name ?? "<default>") gain=\(gain)")
+        appLog("  available device count=\(appState.devices.count)")
+        for d in appState.devices {
+            appLog("    device: '\(d.name)' channels=\(d.inputChannels) default=\(d.isDefault)")
+        }
+
         appState.isRecording = true
         appState.startTime = Date()
         appState.statusText = "Starting…"
         refreshUI()
 
         Task.detached {
+            appLog("worker: Task.detached entered")
             do {
-                if captureMic {
-                    let m = MicRecorder(outputDir: session, device: device, gain: gain)
-                    try m.start()
-                    appState.mic = m
+                // Start mic + system in PARALLEL, not sequentially. Sequential
+                // start gave the mic a head-start of ~100-200ms before
+                // loopback got going (especially after we added the render
+                // keepalive), and the mixer aligning frame 0 of each track
+                // baked that gap right into the merged audio.
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    if captureMic {
+                        group.addTask {
+                            appLog("worker: starting MicRecorder")
+                            let m = MicRecorder(outputDir: session, device: device, gain: gain)
+                            try m.start()
+                            appLog("worker: MicRecorder OK (rate=\(m.sampleRate) ch=\(m.channels))")
+                            appState.mic = m
+                        }
+                    }
+                    if captureSystem {
+                        group.addTask {
+                            appLog("worker: starting SystemRecorder")
+                            let s = SystemRecorder(outputDir: session)
+                            try await s.start()
+                            appLog("worker: SystemRecorder OK")
+                            appState.system = s
+                        }
+                    }
+                    try await group.waitForAll()
                 }
-                if captureSystem {
-                    let s = SystemRecorder(outputDir: session)
-                    try await s.start()
-                    appState.system = s
-                }
+                appLog("worker: posting WM_RECORD_STARTED")
                 _ = PostMessageW(main, WM_RECORD_STARTED, 0, 0)
+            } catch let comError as COMError {
+                let hex = String(format: "0x%08X", UInt32(bitPattern: Int32(comError.hr)))
+                appLog("worker: COMError thrown — hr=\(hex) ctx='\(comError.context)'")
+                appState.isRecording = false
+                appState.statusText = "Failed: \(comError) — see app.log"
+                appState.mic?.stop()
+                appState.mic = nil
+                appState.system = nil
+                _ = PostMessageW(main, WM_OP_FAILED, 0, 0)
             } catch {
+                appLog("worker: error thrown — \(type(of: error)) \(error)")
+                appLog("  localizedDescription: \(error.localizedDescription)")
                 appState.isRecording = false
                 appState.statusText = "Failed: \(error.localizedDescription)"
                 appState.mic?.stop()

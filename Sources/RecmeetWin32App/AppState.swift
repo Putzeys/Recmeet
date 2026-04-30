@@ -41,11 +41,15 @@ final class AppState {
     var hwndElapsedLabel: HWND?
 
     init() {
+        appLog("AppState.init — recmeet \(RECMEET_CURRENT_VERSION)")
+        appLog("  outputDir=\(outputDir.path)")
         try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         devices = AudioDevices.listInputs()
+        appLog("  AudioDevices.listInputs() returned \(devices.count) devices")
         if let i = devices.firstIndex(where: { $0.isDefault }) {
             selectedDeviceIndex = i
         }
+        appLog("  selectedDeviceIndex=\(selectedDeviceIndex)")
     }
 
     var selectedDevice: AudioInputDevice? {

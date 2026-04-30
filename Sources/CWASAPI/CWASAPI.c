@@ -40,6 +40,10 @@ const IID IID_IAudioCaptureClient = {
     0xC8ADBD64, 0xE71E, 0x48A0,
     { 0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17 }
 };
+const IID IID_IAudioRenderClient = {
+    0xF294ACFC, 0x3146, 0x4483,
+    { 0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2 }
+};
 
 // PKEY_Device_FriendlyName, defined manually so we don't need
 // functiondiscoverykeys_devpkey.h (and its include-chain pain).
@@ -372,6 +376,122 @@ void recmeet_capture_release(recmeet_capture_t h) {
     if (c->client)  IAudioClient_Release(c->client);
     if (c->device)  IMMDevice_Release(c->device);
     free(c);
+}
+
+// MARK: - Render keepalive
+
+typedef struct {
+    IAudioClient        *client;
+    IAudioRenderClient  *render;
+    UINT32               buffer_frames;
+    HANDLE               thread;
+    HANDLE               stop_event;
+} keepalive_impl;
+
+static DWORD WINAPI keepalive_thread_proc(LPVOID lp) {
+    keepalive_impl *k = (keepalive_impl *)lp;
+    // Wake roughly every 10ms to top the buffer up with silence.
+    while (WaitForSingleObject(k->stop_event, 10) == WAIT_TIMEOUT) {
+        UINT32 padding = 0;
+        if (FAILED(IAudioClient_GetCurrentPadding(k->client, &padding))) continue;
+        UINT32 free_frames = k->buffer_frames - padding;
+        if (free_frames == 0) continue;
+        BYTE *buf = NULL;
+        if (FAILED(IAudioRenderClient_GetBuffer(k->render, free_frames, &buf))) continue;
+        // Releasing with AUDCLNT_BUFFERFLAGS_SILENT tells the engine to
+        // ignore buf contents — no need to actually zero it.
+        IAudioRenderClient_ReleaseBuffer(
+            k->render, free_frames, AUDCLNT_BUFFERFLAGS_SILENT
+        );
+    }
+    return 0;
+}
+
+recmeet_keepalive_t recmeet_keepalive_start(recmeet_device_t h) {
+    dev_impl *d = as_dev(h);
+    if (!d || !d->raw) return NULL;
+
+    IAudioClient *client = NULL;
+    HRESULT hr = IMMDevice_Activate(d->raw, &IID_IAudioClient, CLSCTX_ALL, NULL, (void **)&client);
+    if (FAILED(hr)) return NULL;
+
+    WAVEFORMATEX *fmt = NULL;
+    if (FAILED(IAudioClient_GetMixFormat(client, &fmt)) || !fmt) {
+        IAudioClient_Release(client);
+        return NULL;
+    }
+
+    REFERENCE_TIME buf_dur = 10000000; // 1s
+    hr = IAudioClient_Initialize(client, AUDCLNT_SHAREMODE_SHARED, 0, buf_dur, 0, fmt, NULL);
+    CoTaskMemFree(fmt);
+    if (FAILED(hr)) {
+        IAudioClient_Release(client);
+        return NULL;
+    }
+
+    UINT32 buffer_frames = 0;
+    if (FAILED(IAudioClient_GetBufferSize(client, &buffer_frames)) || buffer_frames == 0) {
+        IAudioClient_Release(client);
+        return NULL;
+    }
+
+    IAudioRenderClient *render = NULL;
+    if (FAILED(IAudioClient_GetService(client, &IID_IAudioRenderClient, (void **)&render)) || !render) {
+        IAudioClient_Release(client);
+        return NULL;
+    }
+
+    // Pre-fill the entire buffer with silence so the stream starts
+    // immediately instead of underflowing.
+    BYTE *buf = NULL;
+    if (SUCCEEDED(IAudioRenderClient_GetBuffer(render, buffer_frames, &buf))) {
+        IAudioRenderClient_ReleaseBuffer(render, buffer_frames, AUDCLNT_BUFFERFLAGS_SILENT);
+    }
+
+    if (FAILED(IAudioClient_Start(client))) {
+        IAudioRenderClient_Release(render);
+        IAudioClient_Release(client);
+        return NULL;
+    }
+
+    keepalive_impl *k = (keepalive_impl *)calloc(1, sizeof(keepalive_impl));
+    if (!k) {
+        IAudioClient_Stop(client);
+        IAudioRenderClient_Release(render);
+        IAudioClient_Release(client);
+        return NULL;
+    }
+    k->client = client;
+    k->render = render;
+    k->buffer_frames = buffer_frames;
+    k->stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    DWORD tid = 0;
+    k->thread = CreateThread(NULL, 0, keepalive_thread_proc, k, 0, &tid);
+    if (!k->thread) {
+        SetEvent(k->stop_event);
+        IAudioClient_Stop(client);
+        IAudioRenderClient_Release(render);
+        IAudioClient_Release(client);
+        if (k->stop_event) CloseHandle(k->stop_event);
+        free(k);
+        return NULL;
+    }
+    return (recmeet_keepalive_t)k;
+}
+
+void recmeet_keepalive_stop(recmeet_keepalive_t h) {
+    if (!h) return;
+    keepalive_impl *k = (keepalive_impl *)h;
+    if (k->stop_event) SetEvent(k->stop_event);
+    if (k->thread) {
+        WaitForSingleObject(k->thread, 1000);
+        CloseHandle(k->thread);
+    }
+    if (k->stop_event) CloseHandle(k->stop_event);
+    if (k->client)  IAudioClient_Stop(k->client);
+    if (k->render)  IAudioRenderClient_Release(k->render);
+    if (k->client)  IAudioClient_Release(k->client);
+    free(k);
 }
 
 #endif // _WIN32
