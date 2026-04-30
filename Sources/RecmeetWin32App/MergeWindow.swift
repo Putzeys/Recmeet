@@ -106,18 +106,15 @@ func presentMergeDialog(parent: HWND?, sessionPath: URL) {
 
     MERGE_CLASS_NAME.withWide { wcls in
         "Mix audio".withWide { wtitle in
-            // WS_POPUP is 0x80000000 — Swift imports it as UInt32, while the
-            // smaller WS_* style bits come in as Int32. Compose via bitPattern
-            // so the OR'd value lands in the signed range DWORD's init expects
-            // on this Swift-on-Windows toolchain.
-            let style: DWORD = DWORD(
-                Int32(bitPattern: WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE)
-            )
+            // Use the standard overlapped style set so all WS_* bits stay
+            // inside Int32 (WS_POPUP = 0x80000000 imports as UInt32 and trips
+            // type inference). The owned-parent + EnableWindow(parent,false)
+            // pair already gives us the modal behaviour we want.
             let hwnd = CreateWindowExW(
                 DWORD(WS_EX_DLGMODALFRAME),
                 wcls,
                 wtitle,
-                style,
+                DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE),
                 CW_USEDEFAULT, CW_USEDEFAULT,
                 480, 240,
                 parent,
