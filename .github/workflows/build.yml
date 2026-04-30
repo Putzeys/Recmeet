@@ -1,0 +1,58 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (Swift release)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: swift --version
+      - name: Build
+        run: swift build -c release
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recmeet-macos-cli
+          path: .build/release/recmeet
+          if-no-files-found: error
+      - name: Upload App artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recmeet-macos-app-binary
+          path: .build/release/RecmeetApp
+          if-no-files-found: error
+
+  windows:
+    name: Windows (Swift release, CLI)
+    runs-on: windows-latest
+    # Swift 6.0.3 has a known cyclic-ucrt module bug with VS Build Tools
+    # 17.10+. The local build on a stable MSVC version works; we keep CI
+    # informational until the toolchain catches up.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift toolchain
+        uses: compnerd/gha-setup-swift@main
+        with:
+          branch: swift-6.0.3-release
+          tag: 6.0.3-RELEASE
+      - name: Show toolchain
+        run: swift --version
+      - name: Build CLI
+        run: swift build -c release --product recmeet
+      - name: Upload Windows CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: recmeet-windows-cli
+          path: .build/release/recmeet.exe
+          if-no-files-found: error

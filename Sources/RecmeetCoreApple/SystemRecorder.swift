@@ -2,6 +2,7 @@ import Foundation
 import ScreenCaptureKit
 import AVFoundation
 import CoreMedia
+import RecmeetCore
 
 /// Captures system audio via ScreenCaptureKit. Video frames are minimized
 /// (1×1, 1 fps) since SCStream requires a video stream but we only consume audio.

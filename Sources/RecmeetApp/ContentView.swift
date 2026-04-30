@@ -1,5 +1,6 @@
 import SwiftUI
 import RecmeetCore
+import RecmeetCoreApple
 
 struct ContentView: View {
     @StateObject private var vm = RecorderViewModel()
