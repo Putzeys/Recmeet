@@ -12,13 +12,26 @@ transcription.
 - Post-stop merge dialog with mic/system volume sliders (CleanShot-style)
 - Native UI on each platform (SwiftUI on Mac, Win32 on Windows)
 
-## Download
+## Install
 
-These links always point at the latest release — bookmark them.
+### macOS — Homebrew (recommended)
 
-- **[macOS (DMG)](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-macos.dmg)** — double-click → drag `recmeet` onto Applications → eject → launch from Launchpad.
-- [macOS (zip)](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-macos.zip)
-- **[Windows (zip)](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-windows.zip)** — unzip → double-click `recmeet.exe`.
+```sh
+brew install --cask Putzeys/recmeet/recmeet
+```
+
+Brew downloads the DMG, strips the macOS quarantine flag, and installs
+`recmeet.app` into `/Applications` — no Gatekeeper *"can't be verified"*
+dialog. Upgrades happen via `brew upgrade --cask recmeet`.
+
+### macOS — direct download
+
+- **[recmeet-macos.dmg](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-macos.dmg)** — double-click → drag `recmeet` onto Applications → eject → launch from Launchpad.
+- [recmeet-macos.zip](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-macos.zip) (alternative)
+
+### Windows
+
+- **[recmeet-windows.zip](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-windows.zip)** — unzip → double-click `recmeet.exe`.
 
 Once the app is installed, future updates happen **inside the app**: it
 checks GitHub on launch, prompts you on a new release, and applies the
