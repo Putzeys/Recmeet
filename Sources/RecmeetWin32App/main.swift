@@ -44,7 +44,7 @@ className.withUnsafeBufferPointer { classNamePtr in
             titlePtr.baseAddress,
             DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX),
             CW_USEDEFAULT, CW_USEDEFAULT,
-            480, 400,
+            500, 510,
             nil, nil, hInstance, nil
         )
         guard hwnd != nil else {

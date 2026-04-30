@@ -12,6 +12,10 @@ let ID_DEVICE_COMBO:     WORD = 102
 let ID_GAIN_SLIDER:      WORD = 103
 let ID_OPEN_FOLDER_BTN:  WORD = 104
 let ID_RECORD_BTN:       WORD = 105
+let ID_MIC_MIX_SLIDER:   WORD = 106
+let ID_SYS_MIX_SLIDER:   WORD = 107
+let ID_KEEP_TRACKS:      WORD = 108
+let ID_DONT_MERGE_BTN:   WORD = 109
 
 let ID_TIMER_ELAPSED: UINT_PTR = 1
 
@@ -38,10 +42,15 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         return 0
 
     case UINT(WM_HSCROLL):
-        // Trackbar value changed.
         let source = HWND(bitPattern: Int(lParam))
-        if source != nil && source == appState.hwndGainSlider {
-            updateGainFromSlider()
+        if source != nil {
+            if source == appState.hwndGainSlider {
+                updateGainFromSlider()
+            } else if source == appState.hwndMicMixSlider {
+                updateMicMixFromSlider()
+            } else if source == appState.hwndSysMixSlider {
+                updateSysMixFromSlider()
+            }
         }
         return 0
 
@@ -63,15 +72,22 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         KillTimer(hwnd, ID_TIMER_ELAPSED)
         appState.isRecording = false
         let bothCaptured = (wParam != 0)
-        appState.statusText = bothCaptured ? "Mixing…" : "Saved."
+        appState.bothCapturedInLastSession = bothCaptured
+        if bothCaptured {
+            appState.hasRecordedSession = true
+            appState.statusText = "Recording saved. Adjust mix volumes and click Mix Audio."
+        } else {
+            appState.hasRecordedSession = false
+            appState.statusText = "Saved."
+        }
         refreshUI()
         return 0
 
     case WM_MIX_DONE:
+        appState.isMixing = false
+        appState.hasRecordedSession = false
         if let merged = appState.mergedFile {
             appState.statusText = "Mixed → \(merged.lastPathComponent)"
-        } else {
-            appState.statusText = "Saved."
         }
         refreshUI()
         return 0
@@ -171,32 +187,79 @@ private func createControls(parent: HWND?) {
     SendMessageW(appState.hwndSysCheck, UINT(BM_SETCHECK),
                  WPARAM(BST_CHECKED), 0)
 
-    // Output folder section.
-    _ = make("STATIC", "Output folder",
+    // Mix volumes (used after recording stops).
+    _ = make("STATIC", "Mix volumes",
              style: 0, x: 20, y: 204, w: 200, h: 18)
 
+    _ = make("STATIC", "Mic", style: 0, x: 20, y: 230, w: 50, h: 18)
+    TRACKBAR_CLASS.withCString(encodedAs: UTF16.self) { wcls in
+        appState.hwndMicMixSlider = CreateWindowExW(
+            0, wcls, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | TBS_HORZ | TBS_NOTICKS),
+            70, 226, 280, 28,
+            parent,
+            HMENU(bitPattern: UInt(ID_MIC_MIX_SLIDER)),
+            hInst,
+            nil
+        )
+    }
+    SendMessageW(appState.hwndMicMixSlider, UINT(TBM_SETRANGE), 1, MAKELPARAM(0, 100))
+    SendMessageW(appState.hwndMicMixSlider, UINT(TBM_SETPOS), 1, LPARAM(appState.micMixPercent))
+    appState.hwndMicMixLabel = make("STATIC", "100%", style: 0, x: 360, y: 230, w: 60, h: 18)
+
+    _ = make("STATIC", "System", style: 0, x: 20, y: 258, w: 50, h: 18)
+    TRACKBAR_CLASS.withCString(encodedAs: UTF16.self) { wcls in
+        appState.hwndSysMixSlider = CreateWindowExW(
+            0, wcls, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | TBS_HORZ | TBS_NOTICKS),
+            70, 254, 280, 28,
+            parent,
+            HMENU(bitPattern: UInt(ID_SYS_MIX_SLIDER)),
+            hInst,
+            nil
+        )
+    }
+    SendMessageW(appState.hwndSysMixSlider, UINT(TBM_SETRANGE), 1, MAKELPARAM(0, 100))
+    SendMessageW(appState.hwndSysMixSlider, UINT(TBM_SETPOS), 1, LPARAM(appState.systemMixPercent))
+    appState.hwndSysMixLabel = make("STATIC", "100%", style: 0, x: 360, y: 258, w: 60, h: 18)
+
+    appState.hwndKeepTracksCheck = make("BUTTON", "Keep separate tracks",
+                                        style: DWORD(BS_AUTOCHECKBOX),
+                                        x: 20, y: 286, w: 200, h: 22,
+                                        id: ID_KEEP_TRACKS)
+
+    // Output folder section.
+    _ = make("STATIC", "Output folder",
+             style: 0, x: 20, y: 322, w: 200, h: 18)
+
     appState.hwndOutputLabel = make("STATIC", appState.outputDir.path,
-                                    style: 0, x: 20, y: 226, w: 320, h: 18)
+                                    style: 0, x: 20, y: 344, w: 320, h: 18)
 
     appState.hwndOpenFolderBtn = make("BUTTON", "Open folder",
                                       style: 0,
-                                      x: 350, y: 222, w: 100, h: 26,
+                                      x: 350, y: 340, w: 100, h: 26,
                                       id: ID_OPEN_FOLDER_BTN)
 
-    // Record button + elapsed label.
+    // Action buttons + elapsed label.
     appState.hwndRecordBtn = make("BUTTON", "Record",
                                   style: DWORD(BS_DEFPUSHBUTTON),
-                                  x: 20, y: 268, w: 280, h: 38,
+                                  x: 20, y: 386, w: 200, h: 38,
                                   id: ID_RECORD_BTN)
+
+    appState.hwndDontMergeBtn = make("BUTTON", "Don't Merge",
+                                     style: 0,
+                                     x: 230, y: 386, w: 110, h: 38,
+                                     id: ID_DONT_MERGE_BTN)
+    ShowWindow(appState.hwndDontMergeBtn, SW_HIDE)
 
     appState.hwndElapsedLabel = make("STATIC", "00:00:00",
                                      style: 0,
-                                     x: 320, y: 276, w: 130, h: 24)
+                                     x: 360, y: 394, w: 100, h: 24)
 
     // Status line.
     appState.hwndStatusLabel = make("STATIC", appState.statusText,
                                     style: 0,
-                                    x: 20, y: 320, w: 430, h: 18)
+                                    x: 20, y: 436, w: 440, h: 18)
 }
 
 // MARK: - Command routing
@@ -204,11 +267,19 @@ private func createControls(parent: HWND?) {
 private func handleCommand(id: WORD, notification: WORD) {
     switch id {
     case ID_RECORD_BTN:
-        if appState.isRecording {
+        // Three-state action button: Record → Stop → Mix Audio → Record.
+        if appState.isMixing {
+            return
+        } else if appState.isRecording {
             startStopRequested(start: false)
+        } else if appState.hasRecordedSession {
+            mixRequested()
         } else {
             startStopRequested(start: true)
         }
+
+    case ID_DONT_MERGE_BTN:
+        dontMerge()
 
     case ID_MIC_CHECK:
         let v = SendMessageW(appState.hwndMicCheck, UINT(BM_GETCHECK), 0, 0)
@@ -219,6 +290,10 @@ private func handleCommand(id: WORD, notification: WORD) {
         let v = SendMessageW(appState.hwndSysCheck, UINT(BM_GETCHECK), 0, 0)
         appState.captureSystem = (v == BST_CHECKED)
         refreshUI()
+
+    case ID_KEEP_TRACKS:
+        let v = SendMessageW(appState.hwndKeepTracksCheck, UINT(BM_GETCHECK), 0, 0)
+        appState.keepSeparateTracks = (v == BST_CHECKED)
 
     case ID_DEVICE_COMBO where notification == WORD(CBN_SELCHANGE):
         let idx = SendMessageW(appState.hwndDeviceCombo,
@@ -248,19 +323,60 @@ private func updateGainFromSlider() {
     setControlText(appState.hwndGainLabel, "\(appState.gainPercent)%")
 }
 
+private func updateMicMixFromSlider() {
+    let pos = SendMessageW(appState.hwndMicMixSlider, UINT(TBM_GETPOS), 0, 0)
+    appState.micMixPercent = Int(pos)
+    setControlText(appState.hwndMicMixLabel, "\(appState.micMixPercent)%")
+}
+
+private func updateSysMixFromSlider() {
+    let pos = SendMessageW(appState.hwndSysMixSlider, UINT(TBM_GETPOS), 0, 0)
+    appState.systemMixPercent = Int(pos)
+    setControlText(appState.hwndSysMixLabel, "\(appState.systemMixPercent)%")
+}
+
 func refreshUI() {
-    setControlText(appState.hwndRecordBtn,
-                   appState.isRecording ? "Stop" : "Record")
+    // Action button label cycles through Record → Stop → Mix Audio → Record.
+    let actionLabel: String
+    if appState.isMixing {
+        actionLabel = "Mixing…"
+    } else if appState.isRecording {
+        actionLabel = "Stop"
+    } else if appState.hasRecordedSession {
+        actionLabel = "Mix Audio"
+    } else {
+        actionLabel = "Record"
+    }
+    setControlText(appState.hwndRecordBtn, actionLabel)
+    EnableWindow(appState.hwndRecordBtn, !appState.isMixing)
+
     setControlText(appState.hwndStatusLabel, appState.statusText)
     setControlText(appState.hwndOutputLabel, appState.outputDir.path)
     setControlText(appState.hwndGainLabel, "\(appState.gainPercent)%")
+    setControlText(appState.hwndMicMixLabel, "\(appState.micMixPercent)%")
+    setControlText(appState.hwndSysMixLabel, "\(appState.systemMixPercent)%")
 
-    // Disable inputs while recording. EnableWindow takes a Bool here on
-    // Swift-Windows (BOOL is bridged to Bool).
-    let enable = !appState.isRecording
-    EnableWindow(appState.hwndMicCheck,    enable)
-    EnableWindow(appState.hwndSysCheck,    enable)
-    EnableWindow(appState.hwndDeviceCombo, enable)
+    // Don't Merge button only visible while we have a recorded session
+    // waiting for a decision.
+    let showDontMerge = appState.hasRecordedSession
+        && appState.bothCapturedInLastSession
+        && !appState.isMixing
+    ShowWindow(appState.hwndDontMergeBtn, showDontMerge ? SW_SHOW : SW_HIDE)
+
+    // Mix sliders + keep-tracks make sense only when there is a session
+    // to act on. Outside that window we leave them visible-but-disabled.
+    let mixActive = appState.hasRecordedSession
+        && appState.bothCapturedInLastSession
+        && !appState.isMixing
+    EnableWindow(appState.hwndMicMixSlider,    mixActive)
+    EnableWindow(appState.hwndSysMixSlider,    mixActive)
+    EnableWindow(appState.hwndKeepTracksCheck, mixActive)
+
+    // Recording controls disabled while a recording / mix is in flight.
+    let recordable = !appState.isRecording && !appState.isMixing
+    EnableWindow(appState.hwndMicCheck,    recordable)
+    EnableWindow(appState.hwndSysCheck,    recordable)
+    EnableWindow(appState.hwndDeviceCombo, recordable)
 }
 
 // MARK: - Recording lifecycle
@@ -336,21 +452,40 @@ private func startStopRequested(start: Bool) {
             mic?.stop()
             await system?.stop()
             _ = PostMessageW(main, WM_RECORD_STOPPED, bothCaptured ? 1 : 0, 0)
-
-            if let session, bothCaptured {
-                do {
-                    let opts = SessionMixer.Options(
-                        micVolume: 1.0, systemVolume: 1.0,
-                        keepSeparateTracks: false
-                    )
-                    let url = try await SessionMixer.merge(sessionDir: session, options: opts)
-                    appState.mergedFile = url
-                } catch {
-                    appState.statusText = "Mix failed: \(error.localizedDescription)"
-                }
-                _ = PostMessageW(main, WM_MIX_DONE, 0, 0)
-            }
         }
     }
+}
+
+private func mixRequested() {
+    guard let session = appState.sessionPath else { return }
+    let main = appState.hwndMain
+    let micVol = Float(appState.micMixPercent) / 100
+    let sysVol = Float(appState.systemMixPercent) / 100
+    let keep = appState.keepSeparateTracks
+
+    appState.isMixing = true
+    appState.statusText = "Mixing…"
+    refreshUI()
+
+    Task.detached {
+        do {
+            let opts = SessionMixer.Options(
+                micVolume: micVol,
+                systemVolume: sysVol,
+                keepSeparateTracks: keep
+            )
+            let url = try await SessionMixer.merge(sessionDir: session, options: opts)
+            appState.mergedFile = url
+        } catch {
+            appState.statusText = "Mix failed: \(error.localizedDescription)"
+        }
+        _ = PostMessageW(main, WM_MIX_DONE, 0, 0)
+    }
+}
+
+private func dontMerge() {
+    appState.hasRecordedSession = false
+    appState.statusText = "Saved (separate tracks kept)."
+    refreshUI()
 }
 #endif
