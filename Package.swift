@@ -7,7 +7,11 @@ let package = Package(
     products: [
         .executable(name: "recmeet", targets: ["recmeet"]),
         .executable(name: "RecmeetApp", targets: ["RecmeetApp"]),
+        .executable(name: "RecmeetCrossApp", targets: ["RecmeetCrossApp"]),
         .library(name: "RecmeetCore", targets: ["RecmeetCore"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/stackotter/swift-cross-ui", from: "0.3.0"),
     ],
     targets: [
         // Cross-platform: Foundation only.
@@ -72,6 +76,21 @@ let package = Package(
             dependencies: ["RecmeetCore", "RecmeetCoreApple"],
             path: "Sources/RecmeetApp",
             exclude: ["Info.plist", "recmeet.entitlements"]
+        ),
+
+        // Cross-platform GUI (SwiftCrossUI). Runs on macOS using AppKit
+        // backend (sanity-test target) and on Windows using its native
+        // backend — the shipping Windows app for v0.3.
+        .executableTarget(
+            name: "RecmeetCrossApp",
+            dependencies: [
+                "RecmeetCore",
+                .target(name: "RecmeetCoreApple",   condition: .when(platforms: [.macOS])),
+                .target(name: "RecmeetCoreWindows", condition: .when(platforms: [.windows])),
+                .product(name: "SwiftCrossUI",   package: "swift-cross-ui"),
+                .product(name: "DefaultBackend", package: "swift-cross-ui"),
+            ],
+            path: "Sources/RecmeetCrossApp"
         ),
     ]
 )
