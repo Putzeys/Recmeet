@@ -4,6 +4,7 @@ import RecmeetCoreApple
 
 struct ContentView: View {
     @StateObject private var vm = RecorderViewModel()
+    @StateObject private var updates = UpdateChecker()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -36,9 +37,27 @@ struct ContentView: View {
         }
         .padding(20)
         .frame(width: 460)
-        .task { vm.refreshDevices() }
+        .task {
+            vm.refreshDevices()
+            updates.checkOnLaunch()
+        }
         .sheet(isPresented: $vm.showMergeSheet) {
             MergeSheet(vm: vm)
+        }
+        .alert(
+            "Update available",
+            isPresented: Binding(
+                get: { updates.available != nil },
+                set: { if !$0 { updates.dismiss() } }
+            ),
+            presenting: updates.available
+        ) { release in
+            Button("Update Now") { updates.applyNow() }
+                .disabled(updates.isApplying)
+            Button("Skip This Version") { updates.skipThisVersion() }
+            Button("Later", role: .cancel) { updates.dismiss() }
+        } message: { release in
+            Text("recmeet \(release.tagName) is available. You're on \(RECMEET_CURRENT_VERSION).")
         }
     }
 

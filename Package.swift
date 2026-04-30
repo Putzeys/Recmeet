@@ -91,6 +91,13 @@ let package = Package(
                 .linkedLibrary("shell32",  .when(platforms: [.windows])),
                 .linkedLibrary("user32",   .when(platforms: [.windows])),
                 .linkedLibrary("gdi32",    .when(platforms: [.windows])),
+                // Build as a real GUI app (no console window). We keep the
+                // CRT entry point so our top-level main.swift code still runs.
+                .unsafeFlags(
+                    ["-Xlinker", "/SUBSYSTEM:WINDOWS",
+                     "-Xlinker", "/ENTRY:mainCRTStartup"],
+                    .when(platforms: [.windows])
+                ),
             ]
         ),
     ]
