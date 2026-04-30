@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "recmeet", targets: ["recmeet"]),
         .executable(name: "RecmeetApp", targets: ["RecmeetApp"]),
+        .executable(name: "RecmeetWin32App", targets: ["RecmeetWin32App"]),
         .library(name: "RecmeetCore", targets: ["RecmeetCore"]),
     ],
     targets: [
@@ -72,6 +73,25 @@ let package = Package(
             dependencies: ["RecmeetCore", "RecmeetCoreApple"],
             path: "Sources/RecmeetApp",
             exclude: ["Info.plist", "recmeet.entitlements"]
+        ),
+
+        // Native Windows GUI. Pure Swift via WinSDK — no Windows App SDK
+        // runtime, no extra DLLs, distributable as a single .exe under 10 MB.
+        // Compiles to a stub on macOS so the package as a whole stays
+        // cross-platform, but the app only actually does anything on Windows.
+        .executableTarget(
+            name: "RecmeetWin32App",
+            dependencies: [
+                "RecmeetCore",
+                .target(name: "RecmeetCoreWindows", condition: .when(platforms: [.windows])),
+            ],
+            path: "Sources/RecmeetWin32App",
+            linkerSettings: [
+                .linkedLibrary("comctl32", .when(platforms: [.windows])),
+                .linkedLibrary("shell32",  .when(platforms: [.windows])),
+                .linkedLibrary("user32",   .when(platforms: [.windows])),
+                .linkedLibrary("gdi32",    .when(platforms: [.windows])),
+            ]
         ),
     ]
 )
