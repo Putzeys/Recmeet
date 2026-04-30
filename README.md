@@ -24,10 +24,28 @@ Once the app is installed, future updates happen **inside the app**: it
 checks GitHub on launch, prompts you on a new release, and applies the
 update with a single click.
 
-Builds are **ad-hoc signed**, not Apple-notarized / Authenticode-signed,
-so the OS will warn you on first launch. That's normal for an OSS
-project without paid signing certificates. Right-click → Open on
-macOS; "More info → Run anyway" on Windows SmartScreen.
+### First-launch warnings (these are normal)
+
+These builds are **ad-hoc signed**, not Apple-notarized or Authenticode-signed
+— the OS doesn't recognise them as coming from a paid developer
+account. Standard fix:
+
+**macOS** (the dialog says *"…can't be verified for malicious software"*):
+- **Open** *System Settings → Privacy & Security*, scroll to the bottom,
+  and click **Open Anyway** next to the recmeet entry. Re-launch the app
+  / DMG.
+- **Or via Terminal**, strip the quarantine flag once:
+  ```bash
+  xattr -dr com.apple.quarantine ~/Downloads/recmeet-macos.dmg
+  xattr -dr com.apple.quarantine /Applications/recmeet.app
+  ```
+
+**Windows** (SmartScreen says *"Windows protected your PC"*):
+- Click **More info → Run anyway**. SmartScreen remembers your choice
+  for this binary.
+
+After the first launch, the auto-updater handles future versions
+without re-triggering these warnings.
 
 ## Requirements
 
