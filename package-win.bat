@@ -48,10 +48,18 @@ for %%f in (vcruntime140.dll vcruntime140_1.dll msvcp140.dll) do (
     )
 )
 
-echo === Zipping ===
+echo === Zipping (flat layout — recmeet.exe at root) ===
+REM Zip the *contents* of the staging folder, not the folder itself, so
+REM extracted archives put recmeet.exe directly at the destination root.
+REM This matters for two reasons:
+REM   1. End users running Windows "Extract All" already get their own
+REM      wrapper folder named after the zip, so a second nested folder
+REM      would just be visual clutter.
+REM   2. The in-app updater extracts the zip and looks for recmeet.exe
+REM      at the staging root — a nested folder breaks it silently.
 if exist dist\recmeet-windows.zip del /q dist\recmeet-windows.zip
-pushd dist
-tar -a -c -f recmeet-windows.zip recmeet-windows
+pushd "%DIST%"
+tar -a -c -f ..\recmeet-windows.zip *
 popd
 
 echo.
