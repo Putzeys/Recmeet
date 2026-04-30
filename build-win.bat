@@ -6,13 +6,16 @@ setlocal
 cd /d "%~dp0"
 
 REM Close any running instance so the linker can overwrite the .exe.
-taskkill /IM RecmeetWin32App.exe >nul 2>&1
+REM /F is required: the app intercepts WM_CLOSE to hide-to-tray, so a
+REM polite taskkill just hides it without terminating the process and
+REM the .exe stays locked.
+taskkill /F /IM RecmeetWin32App.exe >nul 2>&1
 if errorlevel 1 (
     REM Wasn't running — that's fine.
     set _RECMEET_WAS_RUNNING=0
 ) else (
     REM Give Windows a moment to release the file handle.
-    timeout /t 1 /nobreak >nul
+    timeout /t 2 /nobreak >nul
     set _RECMEET_WAS_RUNNING=1
 )
 
