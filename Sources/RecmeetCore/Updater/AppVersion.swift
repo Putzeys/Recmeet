@@ -36,4 +36,4 @@ public struct AppVersion: Comparable, CustomStringConvertible, Sendable {
 
 /// Bumped on every release. Compared against the GitHub Releases tag to
 /// decide whether the in-app updater should prompt.
-public let RECMEET_CURRENT_VERSION = AppVersion(0, 4, 0)
+public let RECMEET_CURRENT_VERSION = AppVersion(0, 5, 0)

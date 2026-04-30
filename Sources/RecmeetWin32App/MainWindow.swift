@@ -329,7 +329,15 @@ private func startStopRequested(start: Bool) {
         let stamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
         let session = appState.outputDir.appendingPathComponent(stamp)
-        try? FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+            appLog("session dir created: \(session.path)")
+        } catch {
+            appLog("FAILED creating session dir: \(error)")
+            appState.statusText = "Folder error: \(error.localizedDescription)"
+            refreshUI()
+            return
+        }
         appState.sessionPath = session
         appState.mergedFile = nil
 
@@ -338,29 +346,52 @@ private func startStopRequested(start: Bool) {
         let device = appState.selectedDevice
         let gain = Float(appState.gainPercent) / 100
 
-        // Flip isRecording immediately so the button shows "Stop" and a
-        // double-click can't kick off a second start. We don't have a Swift
-        // MainActor executor wired into Win32's message loop, so we stay
-        // off the main actor entirely and use PostMessage as the handshake.
+        appLog("startStopRequested(start: true)")
+        appLog("  captureMic=\(captureMic) captureSystem=\(captureSystem)")
+        appLog("  device=\(device?.name ?? "<default>") gain=\(gain)")
+        appLog("  available device count=\(appState.devices.count)")
+        for d in appState.devices {
+            appLog("    device: '\(d.name)' channels=\(d.inputChannels) default=\(d.isDefault)")
+        }
+
         appState.isRecording = true
         appState.startTime = Date()
         appState.statusText = "Starting…"
         refreshUI()
 
         Task.detached {
+            appLog("worker: Task.detached entered")
             do {
                 if captureMic {
+                    appLog("worker: creating MicRecorder")
                     let m = MicRecorder(outputDir: session, device: device, gain: gain)
+                    appLog("worker: calling MicRecorder.start()")
                     try m.start()
+                    appLog("worker: MicRecorder.start() OK (rate=\(m.sampleRate) ch=\(m.channels))")
                     appState.mic = m
                 }
                 if captureSystem {
+                    appLog("worker: creating SystemRecorder")
                     let s = SystemRecorder(outputDir: session)
+                    appLog("worker: calling SystemRecorder.start() (loopback)")
                     try await s.start()
+                    appLog("worker: SystemRecorder.start() OK")
                     appState.system = s
                 }
+                appLog("worker: posting WM_RECORD_STARTED")
                 _ = PostMessageW(main, WM_RECORD_STARTED, 0, 0)
+            } catch let comError as COMError {
+                let hex = String(format: "0x%08X", UInt32(bitPattern: Int32(comError.hr)))
+                appLog("worker: COMError thrown — hr=\(hex) ctx='\(comError.context)'")
+                appState.isRecording = false
+                appState.statusText = "Failed: \(comError) — see app.log"
+                appState.mic?.stop()
+                appState.mic = nil
+                appState.system = nil
+                _ = PostMessageW(main, WM_OP_FAILED, 0, 0)
             } catch {
+                appLog("worker: error thrown — \(type(of: error)) \(error)")
+                appLog("  localizedDescription: \(error.localizedDescription)")
                 appState.isRecording = false
                 appState.statusText = "Failed: \(error.localizedDescription)"
                 appState.mic?.stop()
