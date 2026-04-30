@@ -232,14 +232,15 @@ final class RecorderViewModel: ObservableObject {
 
     private func scheduleTimers() {
         let elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, let st = self.startTime else { return }
+                guard let st = self.startTime else { return }
                 self.elapsedSeconds = Int(Date().timeIntervalSince(st))
             }
         }
         let levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self else { return }
                 let p = self.levelMonitor?.drainPeak() ?? 0
                 self.micLevel = max(p, self.micLevel * 0.85)
             }
