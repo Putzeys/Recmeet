@@ -62,8 +62,8 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
     case WM_RECORD_STOPPED:
         KillTimer(hwnd, ID_TIMER_ELAPSED)
         appState.isRecording = false
-        appState.statusText = (appState.mic != nil && appState.system != nil)
-            ? "Mixing…" : "Saved."
+        let bothCaptured = (wParam != 0)
+        appState.statusText = bothCaptured ? "Mixing…" : "Saved."
         refreshUI()
         return 0
 
@@ -267,6 +267,7 @@ func refreshUI() {
 
 private func startStopRequested(start: Bool) {
     let main = appState.hwndMain
+
     if start {
         guard appState.captureMic || appState.captureSystem else {
             appState.statusText = "Enable at least one source."
@@ -285,6 +286,12 @@ private func startStopRequested(start: Bool) {
         let device = appState.selectedDevice
         let gain = Float(appState.gainPercent) / 100
 
+        // Flip isRecording immediately so the button shows "Stop" and a
+        // double-click can't kick off a second start. We don't have a Swift
+        // MainActor executor wired into Win32's message loop, so we stay
+        // off the main actor entirely and use PostMessage as the handshake.
+        appState.isRecording = true
+        appState.startTime = Date()
         appState.statusText = "Starting…"
         refreshUI()
 
@@ -293,50 +300,53 @@ private func startStopRequested(start: Bool) {
                 if captureMic {
                     let m = MicRecorder(outputDir: session, device: device, gain: gain)
                     try m.start()
-                    await MainActor.run { appState.mic = m }
+                    appState.mic = m
                 }
                 if captureSystem {
                     let s = SystemRecorder(outputDir: session)
                     try await s.start()
-                    await MainActor.run { appState.system = s }
+                    appState.system = s
                 }
                 _ = PostMessageW(main, WM_RECORD_STARTED, 0, 0)
             } catch {
-                await MainActor.run {
-                    appState.statusText = "Failed: \(error.localizedDescription)"
-                    appState.mic?.stop()
-                    appState.mic = nil
-                    appState.system = nil
-                }
+                appState.isRecording = false
+                appState.statusText = "Failed: \(error.localizedDescription)"
+                appState.mic?.stop()
+                appState.mic = nil
+                appState.system = nil
                 _ = PostMessageW(main, WM_OP_FAILED, 0, 0)
             }
         }
     } else {
+        guard appState.isRecording else { return }
+
+        appState.isRecording = false
+        appState.statusText = "Stopping…"
+        refreshUI()
+
         let session = appState.sessionPath
         let mic = appState.mic
         let system = appState.system
         appState.mic = nil
         appState.system = nil
         appState.startTime = nil
+        let bothCaptured = (mic != nil) && (system != nil)
 
         Task.detached {
             mic?.stop()
             await system?.stop()
-            _ = PostMessageW(main, WM_RECORD_STOPPED, 0, 0)
+            _ = PostMessageW(main, WM_RECORD_STOPPED, bothCaptured ? 1 : 0, 0)
 
-            // Auto-merge when both sources captured.
-            if let session, mic != nil, system != nil {
+            if let session, bothCaptured {
                 do {
                     let opts = SessionMixer.Options(
                         micVolume: 1.0, systemVolume: 1.0,
                         keepSeparateTracks: false
                     )
                     let url = try await SessionMixer.merge(sessionDir: session, options: opts)
-                    await MainActor.run { appState.mergedFile = url }
+                    appState.mergedFile = url
                 } catch {
-                    await MainActor.run {
-                        appState.statusText = "Mix failed: \(error.localizedDescription)"
-                    }
+                    appState.statusText = "Mix failed: \(error.localizedDescription)"
                 }
                 _ = PostMessageW(main, WM_MIX_DONE, 0, 0)
             }
