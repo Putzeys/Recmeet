@@ -34,22 +34,35 @@ final class WASAPICapture {
 
         var hr: HRESULT = 0
         let loopback: Int32 = (mode == .loopback) ? 1 : 0
+        Log.info("WASAPICapture: recmeet_capture_create begin (loopback=\(loopback))")
         guard let cap = recmeet_capture_create(device, loopback, &hr) else {
+            let hex = String(format: "0x%08X", UInt32(bitPattern: Int32(hr)))
+            Log.error("WASAPICapture: recmeet_capture_create returned NULL hr=\(hex)")
             throw COMError(hr: hr, context: "recmeet_capture_create")
         }
+        Log.info("WASAPICapture: recmeet_capture_create OK")
         self.cap = cap
 
         let format = recmeet_capture_format(cap)
         self.sampleRate = format.sample_rate
         self.channels = format.channels
         self.bytesPerFrame = Int(format.channels) * 2
+        Log.info("WASAPICapture: format sr=\(format.sample_rate) ch=\(format.channels)")
 
-        self.writer = try WAVChunkWriter(
-            directory: outputDir,
-            prefix: filePrefix,
-            sampleRate: Double(format.sample_rate),
-            channels: UInt32(format.channels)
-        )
+        Log.info("WASAPICapture: opening WAVChunkWriter dir=\(outputDir.path) prefix=\(filePrefix)")
+        do {
+            self.writer = try WAVChunkWriter(
+                directory: outputDir,
+                prefix: filePrefix,
+                sampleRate: Double(format.sample_rate),
+                channels: UInt32(format.channels)
+            )
+            Log.info("WASAPICapture: WAVChunkWriter ready")
+        } catch {
+            Log.error("WASAPICapture: WAVChunkWriter failed — \(error.localizedDescription)")
+            recmeet_capture_release(cap)
+            throw error
+        }
     }
 
     deinit {

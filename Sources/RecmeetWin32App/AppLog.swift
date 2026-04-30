@@ -8,22 +8,21 @@ private let appLogURL: URL = {
     return dir.appendingPathComponent("app.log")
 }()
 
-private let appLogQueue = DispatchQueue(label: "recmeet.applog")
+private let appLogLock = NSLock()
 
-/// Append a line to `%LOCALAPPDATA%\recmeet\app.log`. Used because GUI Swift
-/// builds on Windows have no console to print to — without this, every
-/// failure is silent.
+/// Append a line to `%LOCALAPPDATA%\recmeet\app.log`. **Synchronous** — if the
+/// next line crashes, we still have everything up to the previous one on disk.
 func appLog(_ msg: String) {
-    appLogQueue.async {
-        let line = "[\(Date())] \(msg)\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if let h = try? FileHandle(forWritingTo: appLogURL) {
-            _ = try? h.seekToEnd()
-            _ = try? h.write(contentsOf: data)
-            _ = try? h.close()
-        } else {
-            try? data.write(to: appLogURL)
-        }
+    appLogLock.lock()
+    defer { appLogLock.unlock() }
+    let line = "[\(Date())] \(msg)\n"
+    guard let data = line.data(using: .utf8) else { return }
+    if let h = try? FileHandle(forWritingTo: appLogURL) {
+        _ = try? h.seekToEnd()
+        _ = try? h.write(contentsOf: data)
+        _ = try? h.close()
+    } else {
+        try? data.write(to: appLogURL)
     }
 }
 

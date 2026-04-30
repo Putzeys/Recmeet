@@ -2,6 +2,11 @@ import Foundation
 
 #if os(Windows)
 import WinSDK
+import RecmeetCore
+
+// Mirror every RecmeetCore Log call into the Windows app log so we can see
+// recorder-internal failures too (stderr is /dev/null under SUBSYSTEM:WINDOWS).
+Log.sink = { msg in appLog("core: \(msg)") }
 
 // MARK: - Common Controls registration
 
