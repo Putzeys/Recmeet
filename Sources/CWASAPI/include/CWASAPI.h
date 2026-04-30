@@ -69,4 +69,15 @@ extern const UINT32 recmeet_AUDCLNT_BUFFERFLAGS_SILENT;
 // Convenience.
 extern const HRESULT recmeet_E_FAIL;
 
+// Render-side "silent stream" keepalive used together with loopback capture.
+// Without it, WASAPI's loopback misses audio that starts AFTER recording
+// began on an idle endpoint (no app was playing anything when we started,
+// so the audio engine had gone to sleep). The keepalive opens a render
+// client on the same render endpoint and continuously feeds it silence,
+// keeping the engine — and our loopback feed — warm.
+typedef void *recmeet_keepalive_t;
+
+recmeet_keepalive_t recmeet_keepalive_start(recmeet_device_t render_device);
+void                recmeet_keepalive_stop(recmeet_keepalive_t ka);
+
 #endif // _WIN32
