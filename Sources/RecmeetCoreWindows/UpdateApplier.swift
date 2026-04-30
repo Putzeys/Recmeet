@@ -33,7 +33,7 @@ public enum WindowsUpdateApplier {
 
         // tar.exe ships with Windows 10/11 and handles .zip natively.
         let tar = Process()
-        tar.launchPath = "C:\\Windows\\System32\\tar.exe"
+        tar.executableURL = URL(fileURLWithPath: "C:\\Windows\\System32\\tar.exe")
         tar.arguments = ["-xf", zipPath.path, "-C", stagingDir.path]
         try tar.run()
         tar.waitUntilExit()
@@ -60,7 +60,7 @@ public enum WindowsUpdateApplier {
         // Spawn the bat detached so it survives our exit. `start` opens it
         // in a new (briefly-visible) console that closes itself.
         let cmd = Process()
-        cmd.launchPath = "C:\\Windows\\System32\\cmd.exe"
+        cmd.executableURL = URL(fileURLWithPath: "C:\\Windows\\System32\\cmd.exe")
         cmd.arguments = ["/c", "start", "", "/min", batPath.path]
         try cmd.run()
 
