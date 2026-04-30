@@ -261,16 +261,15 @@ recmeet_capture_t recmeet_capture_create(recmeet_device_t h, int loopback, HRESU
     HRESULT hr = IMMDevice_Activate(d->raw, &IID_IAudioClient, CLSCTX_ALL, NULL, (void **)&client);
     if (FAILED(hr)) { if (out_hr) *out_hr = hr; return NULL; }
 
-    WAVEFORMATEX *mix_fmt = NULL;
-    hr = IAudioClient_GetMixFormat(client, &mix_fmt);
-    if (FAILED(hr) || !mix_fmt) {
-        IAudioClient_Release(client);
-        if (out_hr) *out_hr = FAILED(hr) ? hr : E_FAIL;
-        return NULL;
-    }
-    UINT32 sample_rate = mix_fmt->nSamplesPerSec;
-    UINT16 channels    = mix_fmt->nChannels;
-    CoTaskMemFree(mix_fmt);
+    // Force a fixed pipeline format: 48 kHz / 16-bit PCM. Mono for the mic
+    // (better for speech / transcription, smaller files); stereo for the
+    // render endpoint loopback (so we preserve the system mix). Windows
+    // remixes & resamples on its side because we set AUTOCONVERTPCM +
+    // SRC_DEFAULT_QUALITY — without that flag pair the mic landed at
+    // whatever the device reported (often 16 kHz or 44.1 kHz), which made
+    // the muxed output sound chipmunked.
+    UINT16 channels    = loopback ? 2 : 1;
+    UINT32 sample_rate = 48000;
 
     WAVEFORMATEX fmt;
     memset(&fmt, 0, sizeof(fmt));
@@ -282,7 +281,9 @@ recmeet_capture_t recmeet_capture_create(recmeet_device_t h, int loopback, HRESU
     fmt.nAvgBytesPerSec = sample_rate * fmt.nBlockAlign;
     fmt.cbSize          = 0;
 
-    DWORD flags = loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0;
+    DWORD flags = (loopback ? AUDCLNT_STREAMFLAGS_LOOPBACK : 0)
+                | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+                | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
     REFERENCE_TIME buf_dur = 10000000; // 1 second
 
     hr = IAudioClient_Initialize(client, AUDCLNT_SHAREMODE_SHARED, flags, buf_dur, 0, &fmt, NULL);
