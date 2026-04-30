@@ -14,18 +14,20 @@ transcription.
 
 ## Download
 
-Grab the latest binary from
-[**Releases**](https://github.com/Putzeys/Recmeet/releases/latest):
+These links always point at the latest release — bookmark them.
 
-| Platform | File | What you do |
-|---|---|---|
-| macOS 13+ | `recmeet-vX.Y.Z-macos.zip` | Unzip → drag `recmeet.app` to **/Applications** → first launch right-click → **Open** |
-| Windows 10+ | `recmeet-vX.Y.Z-windows.zip` | Unzip → double-click `recmeet.exe` |
+- **[macOS (DMG)](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-macos.dmg)** — double-click → drag `recmeet` onto Applications → eject → launch from Launchpad.
+- [macOS (zip)](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-macos.zip)
+- **[Windows (zip)](https://github.com/Putzeys/Recmeet/releases/latest/download/recmeet-windows.zip)** — unzip → double-click `recmeet.exe`.
+
+Once the app is installed, future updates happen **inside the app**: it
+checks GitHub on launch, prompts you on a new release, and applies the
+update with a single click.
 
 Builds are **ad-hoc signed**, not Apple-notarized / Authenticode-signed,
 so the OS will warn you on first launch. That's normal for an OSS
-project that doesn't pay for paid signing certificates. Right-click →
-Open on macOS; "More info → Run anyway" on Windows SmartScreen.
+project without paid signing certificates. Right-click → Open on
+macOS; "More info → Run anyway" on Windows SmartScreen.
 
 ## Requirements
 
