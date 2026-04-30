@@ -1,15 +1,31 @@
 # recmeet
 
-Tiny CLI to record **microphone + system audio** simultaneously, on macOS,
-with no virtual audio drivers required. Built for long meetings where you
-just want clean audio for transcription.
+Native desktop app + CLI to record **microphone + system audio**
+simultaneously on **macOS and Windows**, with no virtual audio drivers
+required. Built for long meetings where you just want clean audio for
+transcription.
 
-- Pure Swift, single binary, zero runtime dependencies
-- Uses **ScreenCaptureKit** for system audio (no BlackHole / Loopback / Soundflower)
-- Uses **AVAudioEngine** for the microphone
-- Records to chunked `.wav` files (rotated every 30 min) so you can record for hours
-- Two separate tracks (`mic_NNN.wav`, `system_NNN.wav`) — better for editing and transcription
-- Windows port planned (WASAPI loopback) — see roadmap
+- Pure Swift on both platforms, single small binary, zero runtime deps
+- macOS: **ScreenCaptureKit** for system audio (no BlackHole/Loopback/Soundflower)
+- Windows: **WASAPI loopback** (the OS-native one)
+- 30-minute chunked WAVs so you can record for hours, crash-safe
+- Post-stop merge dialog with mic/system volume sliders (CleanShot-style)
+- Native UI on each platform (SwiftUI on Mac, Win32 on Windows)
+
+## Download
+
+Grab the latest binary from
+[**Releases**](https://github.com/Putzeys/Recmeet/releases/latest):
+
+| Platform | File | What you do |
+|---|---|---|
+| macOS 13+ | `recmeet-vX.Y.Z-macos.zip` | Unzip → drag `recmeet.app` to **/Applications** → first launch right-click → **Open** |
+| Windows 10+ | `recmeet-vX.Y.Z-windows.zip` | Unzip → double-click `recmeet.exe` |
+
+Builds are **ad-hoc signed**, not Apple-notarized / Authenticode-signed,
+so the OS will warn you on first launch. That's normal for an OSS
+project that doesn't pay for paid signing certificates. Right-click →
+Open on macOS; "More info → Run anyway" on Windows SmartScreen.
 
 ## Requirements
 
