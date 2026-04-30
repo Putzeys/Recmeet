@@ -7,11 +7,8 @@ let package = Package(
     products: [
         .executable(name: "recmeet", targets: ["recmeet"]),
         .executable(name: "RecmeetApp", targets: ["RecmeetApp"]),
-        .executable(name: "RecmeetCrossApp", targets: ["RecmeetCrossApp"]),
+        .executable(name: "RecmeetWin32App", targets: ["RecmeetWin32App"]),
         .library(name: "RecmeetCore", targets: ["RecmeetCore"]),
-    ],
-    dependencies: [
-        .package(url: "https://github.com/stackotter/swift-cross-ui", from: "0.3.0"),
     ],
     targets: [
         // Cross-platform: Foundation only.
@@ -78,19 +75,23 @@ let package = Package(
             exclude: ["Info.plist", "recmeet.entitlements"]
         ),
 
-        // Cross-platform GUI (SwiftCrossUI). Runs on macOS using AppKit
-        // backend (sanity-test target) and on Windows using its native
-        // backend — the shipping Windows app for v0.3.
+        // Native Windows GUI. Pure Swift via WinSDK — no Windows App SDK
+        // runtime, no extra DLLs, distributable as a single .exe under 10 MB.
+        // Compiles to a stub on macOS so the package as a whole stays
+        // cross-platform, but the app only actually does anything on Windows.
         .executableTarget(
-            name: "RecmeetCrossApp",
+            name: "RecmeetWin32App",
             dependencies: [
                 "RecmeetCore",
-                .target(name: "RecmeetCoreApple",   condition: .when(platforms: [.macOS])),
                 .target(name: "RecmeetCoreWindows", condition: .when(platforms: [.windows])),
-                .product(name: "SwiftCrossUI",   package: "swift-cross-ui"),
-                .product(name: "DefaultBackend", package: "swift-cross-ui"),
             ],
-            path: "Sources/RecmeetCrossApp"
+            path: "Sources/RecmeetWin32App",
+            linkerSettings: [
+                .linkedLibrary("comctl32", .when(platforms: [.windows])),
+                .linkedLibrary("shell32",  .when(platforms: [.windows])),
+                .linkedLibrary("user32",   .when(platforms: [.windows])),
+                .linkedLibrary("gdi32",    .when(platforms: [.windows])),
+            ]
         ),
     ]
 )
