@@ -14,47 +14,32 @@ public struct AudioInputDevice: Hashable, Sendable {
 }
 
 public enum AudioDevices {
+
     public static func listInputs() -> [AudioInputDevice] {
-        do { try initializeCOM() } catch { return [] }
+        _ = recmeet_init()
 
-        guard let enumerator = makeDeviceEnumerator() else { return [] }
-        defer { _ = enumerator.pointee.lpVtbl.pointee.Release(enumerator) }
+        let maxCount = 64
+        let buffer = UnsafeMutablePointer<recmeet_device_t?>.allocate(capacity: maxCount)
+        defer { buffer.deallocate() }
 
-        let defaultId = defaultCaptureDeviceId(enumerator)
-
-        var collectionPtr: UnsafeMutablePointer<IMMDeviceCollection>?
-        let hr = enumerator.pointee.lpVtbl.pointee.EnumAudioEndpoints(
-            enumerator,
-            eCapture,
-            recmeet_DEVICE_STATE_ACTIVE,
-            &collectionPtr
-        )
-        guard hr >= 0, let collection = collectionPtr else { return [] }
-        defer { _ = collection.pointee.lpVtbl.pointee.Release(collection) }
-
-        var count: UINT = 0
-        _ = collection.pointee.lpVtbl.pointee.GetCount(collection, &count)
-
+        let count = Int(recmeet_enumerate_capture_devices(buffer, Int32(maxCount)))
         var result: [AudioInputDevice] = []
+        result.reserveCapacity(count)
+
         for i in 0..<count {
-            var devPtr: UnsafeMutablePointer<IMMDevice>?
-            guard collection.pointee.lpVtbl.pointee.Item(collection, i, &devPtr) >= 0,
-                  let dev = devPtr else { continue }
-            defer { _ = dev.pointee.lpVtbl.pointee.Release(dev) }
+            guard let dev = buffer[i] else { continue }
+            defer { recmeet_device_release(dev) }
 
-            var idPtr: LPWSTR?
-            _ = dev.pointee.lpVtbl.pointee.GetId(dev, &idPtr)
-            let id = stringFromWide(idPtr)
-            coFreeWide(idPtr)
-
-            let name = friendlyName(dev) ?? "<unknown>"
-            let channels = inputChannelCount(dev)
+            let id   = consumeWide(recmeet_device_id(dev))
+            let name = consumeWide(recmeet_device_name(dev))
+            let ch   = recmeet_device_channel_count(dev)
+            let isDefault = recmeet_device_is_default_capture(dev) != 0
 
             result.append(AudioInputDevice(
                 id: id,
-                name: name,
-                inputChannels: channels,
-                isDefault: id == defaultId
+                name: name.isEmpty ? "<unknown>" : name,
+                inputChannels: ch,
+                isDefault: isDefault
             ))
         }
         return result
@@ -67,93 +52,21 @@ public enum AudioDevices {
         return all.first(where: { $0.name.lowercased().contains(needle) })
     }
 
-    public static func openDevice(id: String?) -> UnsafeMutablePointer<IMMDevice>? {
-        do { try initializeCOM() } catch { return nil }
-        guard let enumerator = makeDeviceEnumerator() else { return nil }
-        defer { _ = enumerator.pointee.lpVtbl.pointee.Release(enumerator) }
-
-        if let id {
-            return id.withCString(encodedAs: UTF16.self) { wid -> UnsafeMutablePointer<IMMDevice>? in
-                var devPtr: UnsafeMutablePointer<IMMDevice>?
-                let hr = enumerator.pointee.lpVtbl.pointee.GetDevice(enumerator, wid, &devPtr)
-                return hr >= 0 ? devPtr : nil
+    /// Caller owns the returned handle and must call recmeet_device_release.
+    static func openInputHandle(id: String?) -> recmeet_device_t? {
+        _ = recmeet_init()
+        if let id, !id.isEmpty {
+            return id.withCString(encodedAs: UTF16.self) { wid in
+                recmeet_device_by_id(wid)
             }
         }
-
-        var devPtr: UnsafeMutablePointer<IMMDevice>?
-        _ = enumerator.pointee.lpVtbl.pointee.GetDefaultAudioEndpoint(enumerator, eCapture, eConsole, &devPtr)
-        return devPtr
+        return recmeet_default_capture_device()
     }
 
-    public static func openDefaultRenderDevice() -> UnsafeMutablePointer<IMMDevice>? {
-        do { try initializeCOM() } catch { return nil }
-        guard let enumerator = makeDeviceEnumerator() else { return nil }
-        defer { _ = enumerator.pointee.lpVtbl.pointee.Release(enumerator) }
-        var devPtr: UnsafeMutablePointer<IMMDevice>?
-        _ = enumerator.pointee.lpVtbl.pointee.GetDefaultAudioEndpoint(enumerator, eRender, eConsole, &devPtr)
-        return devPtr
-    }
-
-    // MARK: - Internals
-
-    private static func makeDeviceEnumerator() -> UnsafeMutablePointer<IMMDeviceEnumerator>? {
-        var ptr: LPVOID?
-        var clsid = CLSID_MMDeviceEnumerator
-        var iid   = IID_IMMDeviceEnumerator
-        let hr = CoCreateInstance(
-            &clsid,
-            nil,
-            recmeet_CLSCTX_ALL,
-            &iid,
-            &ptr
-        )
-        guard hr >= 0, let raw = ptr else { return nil }
-        return raw.assumingMemoryBound(to: IMMDeviceEnumerator.self)
-    }
-
-    private static func defaultCaptureDeviceId(_ enumerator: UnsafeMutablePointer<IMMDeviceEnumerator>) -> String {
-        var devPtr: UnsafeMutablePointer<IMMDevice>?
-        guard enumerator.pointee.lpVtbl.pointee.GetDefaultAudioEndpoint(enumerator, eCapture, eConsole, &devPtr) >= 0,
-              let dev = devPtr else { return "" }
-        defer { _ = dev.pointee.lpVtbl.pointee.Release(dev) }
-        var idPtr: LPWSTR?
-        _ = dev.pointee.lpVtbl.pointee.GetId(dev, &idPtr)
-        let id = stringFromWide(idPtr)
-        coFreeWide(idPtr)
-        return id
-    }
-
-    private static func friendlyName(_ device: UnsafeMutablePointer<IMMDevice>) -> String? {
-        var storePtr: UnsafeMutablePointer<IPropertyStore>?
-        guard device.pointee.lpVtbl.pointee.OpenPropertyStore(device, recmeet_STGM_READ, &storePtr) >= 0,
-              let store = storePtr else { return nil }
-        defer { _ = store.pointee.lpVtbl.pointee.Release(store) }
-
-        var key = recmeet_PKEY_Device_FriendlyName
-        var prop = PROPVARIANT()
-        recmeet_PropVariantInit(&prop)
-        defer { _ = recmeet_PropVariantClear(&prop) }
-
-        guard store.pointee.lpVtbl.pointee.GetValue(store, &key, &prop) >= 0 else { return nil }
-        guard prop.vt == recmeet_VT_LPWSTR else { return nil }
-        return stringFromWide(prop.pwszVal)
-    }
-
-    private static func inputChannelCount(_ device: UnsafeMutablePointer<IMMDevice>) -> UInt32 {
-        var clientPtr: LPVOID?
-        var iid = IID_IAudioClient
-        guard device.pointee.lpVtbl.pointee.Activate(
-                device, &iid, recmeet_CLSCTX_ALL,
-                nil as UnsafeMutablePointer<PROPVARIANT>?,
-                &clientPtr) >= 0,
-              let raw = clientPtr else { return 0 }
-        let client = raw.assumingMemoryBound(to: IAudioClient.self)
-        defer { _ = client.pointee.lpVtbl.pointee.Release(client) }
-
-        var fmt: UnsafeMutablePointer<WAVEFORMATEX>?
-        guard client.pointee.lpVtbl.pointee.GetMixFormat(client, &fmt) >= 0, let fmt else { return 0 }
-        defer { CoTaskMemFree(UnsafeMutableRawPointer(fmt)) }
-        return UInt32(fmt.pointee.nChannels)
+    /// Caller owns the returned handle and must call recmeet_device_release.
+    static func openDefaultRenderHandle() -> recmeet_device_t? {
+        _ = recmeet_init()
+        return recmeet_default_render_device()
     }
 }
 

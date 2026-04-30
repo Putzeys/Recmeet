@@ -4,8 +4,6 @@ import CWASAPI
 import Foundation
 import RecmeetCore
 
-/// Microphone capture for Windows. Wraps `WASAPICapture` in `.capture` mode
-/// against either the chosen `AudioInputDevice` or the system default.
 public final class MicRecorder {
     private let outputDir: URL
     private let preferredDevice: AudioInputDevice?
@@ -13,10 +11,8 @@ public final class MicRecorder {
 
     public let levelMonitor: MicLevelMonitor?
 
-    /// Software gain applied at the WASAPI layer. NOT yet implemented on Windows
-    /// (stubbed to satisfy the cross-platform API; the capture path passes raw
-    /// samples through). Wire in v0.2.x once we move to a Float32-intermediate
-    /// pipeline.
+    /// Software gain — currently a no-op on Windows. Wire in v0.2.x once we
+    /// add a Float32 intermediate in WASAPICapture.
     public var gain: Float = 1.0
 
     public var sampleRate: Double { Double(capture?.sampleRate ?? 48000) }
@@ -30,8 +26,7 @@ public final class MicRecorder {
     }
 
     public func start() throws {
-        let dev = AudioDevices.openDevice(id: preferredDevice?.id)
-        guard let dev else {
+        guard let dev = AudioDevices.openInputHandle(id: preferredDevice?.id) else {
             throw COMError(hr: recmeet_E_FAIL, context: "No microphone device available")
         }
         let capture = try WASAPICapture(

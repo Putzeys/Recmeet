@@ -4,9 +4,6 @@ import CWASAPI
 import Foundation
 import RecmeetCore
 
-/// System-audio capture for Windows. Uses the default render endpoint with
-/// `AUDCLNT_STREAMFLAGS_LOOPBACK` — Windows' built-in loopback. No virtual
-/// audio drivers required.
 public final class SystemRecorder {
     private let outputDir: URL
     private var capture: WASAPICapture?
@@ -16,7 +13,7 @@ public final class SystemRecorder {
     }
 
     public func start() async throws {
-        guard let dev = AudioDevices.openDefaultRenderDevice() else {
+        guard let dev = AudioDevices.openDefaultRenderHandle() else {
             throw COMError(hr: recmeet_E_FAIL, context: "No default render device for loopback")
         }
         let capture = try WASAPICapture(
