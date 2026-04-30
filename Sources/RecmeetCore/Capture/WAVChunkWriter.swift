@@ -57,7 +57,7 @@ public final class WAVChunkWriter {
     private func openNewChunk() throws {
         let name = String(format: "%@_%03d.wav", prefix, chunkIndex)
         let url = directory.appendingPathComponent(name)
-        FileManager.default.createFile(atPath: url.path, contents: nil)
+        _ = FileManager.default.createFile(atPath: url.path, contents: nil)
         let handle = try FileHandle(forWritingTo: url)
         let header = Self.makeWAVHeader(dataSize: 0, sampleRate: UInt32(sampleRate), channels: UInt16(channels), bitsPerSample: 16)
         try handle.write(contentsOf: header)

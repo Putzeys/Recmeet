@@ -159,7 +159,7 @@ final class SingleWAVWriter {
     private var dataBytes: UInt32 = 0
 
     init(url: URL, sampleRate: UInt32, channels: UInt16) throws {
-        FileManager.default.createFile(atPath: url.path, contents: nil)
+        _ = FileManager.default.createFile(atPath: url.path, contents: nil)
         self.url = url
         self.handle = try FileHandle(forWritingTo: url)
         let header = WAVChunkWriter.makeWAVHeader(

@@ -1,5 +1,6 @@
 #if os(Windows)
 import WinSDK
+import CWASAPI
 import Foundation
 import RecmeetCore
 
@@ -31,7 +32,7 @@ public final class MicRecorder {
     public func start() throws {
         let dev = AudioDevices.openDevice(id: preferredDevice?.id)
         guard let dev else {
-            throw COMError(hr: E_FAIL, context: "No microphone device available")
+            throw COMError(hr: recmeet_E_FAIL, context: "No microphone device available")
         }
         let capture = try WASAPICapture(
             device: dev,

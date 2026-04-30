@@ -1,5 +1,6 @@
 #if os(Windows)
 import WinSDK
+import CWASAPI
 import Foundation
 import RecmeetCore
 
@@ -16,7 +17,7 @@ public final class SystemRecorder {
 
     public func start() async throws {
         guard let dev = AudioDevices.openDefaultRenderDevice() else {
-            throw COMError(hr: E_FAIL, context: "No default render device for loopback")
+            throw COMError(hr: recmeet_E_FAIL, context: "No default render device for loopback")
         }
         let capture = try WASAPICapture(
             device: dev,

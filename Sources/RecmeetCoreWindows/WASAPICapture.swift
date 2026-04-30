@@ -1,16 +1,13 @@
 #if os(Windows)
 import WinSDK
+import CWASAPI
 import Foundation
 import RecmeetCore
 
-/// Shared WASAPI capture engine used by both `MicRecorder` (capture endpoint)
-/// and `SystemRecorder` (render endpoint with loopback flag). Captures into
-/// a `WAVChunkWriter` configured for 48 kHz / 16-bit, with the channel count
-/// the device hands us (mono mic, stereo system).
 final class WASAPICapture {
     enum Mode {
-        case capture          // microphone or other input endpoint
-        case loopback         // render endpoint, loopback flag
+        case capture
+        case loopback
     }
 
     private let device: UnsafeMutablePointer<IMMDevice>
@@ -36,25 +33,30 @@ final class WASAPICapture {
         self.mode = mode
         self.levelMonitor = levelMonitor
 
-        // Activate IAudioClient and pick a 16-bit Int format at the device's mix rate.
-        var clientRaw: UnsafeMutableRawPointer?
+        var clientRaw: LPVOID?
         var iid = IID_IAudioClient
         try checkHR(
-            device.pointee.lpVtbl.pointee.Activate(device, &iid, DWORD(CLSCTX_ALL.rawValue), nil, &clientRaw),
+            device.pointee.lpVtbl.pointee.Activate(
+                device, &iid, recmeet_CLSCTX_ALL,
+                nil as UnsafeMutablePointer<PROPVARIANT>?,
+                &clientRaw
+            ),
             "IMMDevice::Activate(IAudioClient)"
         )
-        guard let raw = clientRaw else { throw COMError(hr: E_FAIL, context: "Activate returned nil") }
+        guard let raw = clientRaw else {
+            throw COMError(hr: recmeet_E_FAIL, context: "Activate returned nil")
+        }
         let client = raw.assumingMemoryBound(to: IAudioClient.self)
         self.client = client
 
         var mixFmtPtr: UnsafeMutablePointer<WAVEFORMATEX>?
         try checkHR(client.pointee.lpVtbl.pointee.GetMixFormat(client, &mixFmtPtr),
                     "IAudioClient::GetMixFormat")
-        guard let mixFmtPtr else { throw COMError(hr: E_FAIL, context: "GetMixFormat nil") }
+        guard let mixFmtPtr else {
+            throw COMError(hr: recmeet_E_FAIL, context: "GetMixFormat nil")
+        }
         defer { CoTaskMemFree(UnsafeMutableRawPointer(mixFmtPtr)) }
 
-        // Force PCM Int16 at the device's native sample rate / channel count.
-        // WASAPI in shared mode resamples for us if needed.
         let nativeChannels = mixFmtPtr.pointee.nChannels
         let nativeRate = mixFmtPtr.pointee.nSamplesPerSec
         self.sampleRate = nativeRate
@@ -72,9 +74,8 @@ final class WASAPICapture {
 
         var streamFlags: DWORD = 0
         if mode == .loopback {
-            streamFlags = DWORD(AUDCLNT_STREAMFLAGS_LOOPBACK)
+            streamFlags = recmeet_AUDCLNT_STREAMFLAGS_LOOPBACK
         }
-        // 1 second buffer; WASAPI will round to engine period.
         let bufferDuration: REFERENCE_TIME = 10_000_000
 
         try withUnsafePointer(to: &fmt) { fmtPtr in
@@ -85,15 +86,17 @@ final class WASAPICapture {
                 bufferDuration,
                 0,
                 fmtPtr,
-                nil
+                nil as UnsafePointer<GUID>?
             ), "IAudioClient::Initialize")
         }
 
-        var captureRaw: UnsafeMutableRawPointer?
+        var captureRaw: LPVOID?
         var capIid = IID_IAudioCaptureClient
         try checkHR(client.pointee.lpVtbl.pointee.GetService(client, &capIid, &captureRaw),
                     "IAudioClient::GetService(IAudioCaptureClient)")
-        guard let capRaw = captureRaw else { throw COMError(hr: E_FAIL, context: "capture nil") }
+        guard let capRaw = captureRaw else {
+            throw COMError(hr: recmeet_E_FAIL, context: "capture nil")
+        }
         self.capture = capRaw.assumingMemoryBound(to: IAudioCaptureClient.self)
 
         self.writer = try WAVChunkWriter(
@@ -112,7 +115,9 @@ final class WASAPICapture {
     }
 
     func start() throws {
-        guard let client else { throw COMError(hr: E_FAIL, context: "client released") }
+        guard let client else {
+            throw COMError(hr: recmeet_E_FAIL, context: "client released")
+        }
         try checkHR(client.pointee.lpVtbl.pointee.Start(client), "IAudioClient::Start")
         let thread = Thread { [weak self] in self?.captureLoop() }
         thread.name = "recmeet.wasapi.capture"
@@ -122,7 +127,6 @@ final class WASAPICapture {
 
     func stop() {
         stopLock.lock(); stopFlag = true; stopLock.unlock()
-        // Wait for capture loop to flush.
         while let t = thread, t.isExecuting { Thread.sleep(forTimeInterval: 0.01) }
         thread = nil
         if let client { _ = client.pointee.lpVtbl.pointee.Stop(client) }
@@ -135,7 +139,7 @@ final class WASAPICapture {
     }
 
     private func captureLoop() {
-        guard let capture, let client else { return }
+        guard let capture else { return }
         let bytesPerFrame = self.bytesPerFrame
         let levelMonitor = self.levelMonitor
         let writer = self.writer
@@ -151,12 +155,15 @@ final class WASAPICapture {
             var dataPtr: UnsafeMutablePointer<BYTE>?
             var numFrames: UINT32 = 0
             var flags: DWORD = 0
-            if capture.pointee.lpVtbl.pointee.GetBuffer(capture, &dataPtr, &numFrames, &flags, nil, nil) < 0 {
-                break
-            }
+            let getHR = capture.pointee.lpVtbl.pointee.GetBuffer(
+                capture, &dataPtr, &numFrames, &flags,
+                nil as UnsafeMutablePointer<UINT64>?,
+                nil as UnsafeMutablePointer<UINT64>?
+            )
+            if getHR < 0 { break }
 
             if let dataPtr, numFrames > 0 {
-                let isSilent = (flags & DWORD(AUDCLNT_BUFFERFLAGS_SILENT)) != 0
+                let isSilent = (flags & recmeet_AUDCLNT_BUFFERFLAGS_SILENT) != 0
                 let byteCount = Int(numFrames) * bytesPerFrame
                 let chunk: Data
                 if isSilent {
@@ -167,8 +174,7 @@ final class WASAPICapture {
                 writer.writeInt16(chunk)
 
                 if let levelMonitor {
-                    let peak = Self.peakAmplitude(bytes: chunk)
-                    levelMonitor.feed(peak)
+                    levelMonitor.feed(Self.peakAmplitude(bytes: chunk))
                 }
             }
 

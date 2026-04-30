@@ -23,11 +23,27 @@ let package = Package(
             path: "Sources/RecmeetCoreApple"
         ),
 
-        // Windows: WASAPI via WinSDK.
+        // C shim that bridges Windows audio headers (mmdeviceapi / audioclient
+        // / propsys / propkey) and re-exports macro constants Swift can't import
+        // directly. Compiles to a no-op on non-Windows hosts.
+        .target(
+            name: "CWASAPI",
+            path: "Sources/CWASAPI",
+            publicHeadersPath: "include"
+        ),
+
+        // Windows: WASAPI via WinSDK + CWASAPI shim.
         .target(
             name: "RecmeetCoreWindows",
-            dependencies: ["RecmeetCore"],
-            path: "Sources/RecmeetCoreWindows"
+            dependencies: [
+                "RecmeetCore",
+                .target(name: "CWASAPI", condition: .when(platforms: [.windows])),
+            ],
+            path: "Sources/RecmeetCoreWindows",
+            linkerSettings: [
+                .linkedLibrary("ole32",   .when(platforms: [.windows])),
+                .linkedLibrary("propsys", .when(platforms: [.windows])),
+            ]
         ),
 
         .executableTarget(
