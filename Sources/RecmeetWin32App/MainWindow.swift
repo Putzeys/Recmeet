@@ -362,21 +362,31 @@ private func startStopRequested(start: Bool) {
         Task.detached {
             appLog("worker: Task.detached entered")
             do {
-                if captureMic {
-                    appLog("worker: creating MicRecorder")
-                    let m = MicRecorder(outputDir: session, device: device, gain: gain)
-                    appLog("worker: calling MicRecorder.start()")
-                    try m.start()
-                    appLog("worker: MicRecorder.start() OK (rate=\(m.sampleRate) ch=\(m.channels))")
-                    appState.mic = m
-                }
-                if captureSystem {
-                    appLog("worker: creating SystemRecorder")
-                    let s = SystemRecorder(outputDir: session)
-                    appLog("worker: calling SystemRecorder.start() (loopback)")
-                    try await s.start()
-                    appLog("worker: SystemRecorder.start() OK")
-                    appState.system = s
+                // Start mic + system in PARALLEL, not sequentially. Sequential
+                // start gave the mic a head-start of ~100-200ms before
+                // loopback got going (especially after we added the render
+                // keepalive), and the mixer aligning frame 0 of each track
+                // baked that gap right into the merged audio.
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    if captureMic {
+                        group.addTask {
+                            appLog("worker: starting MicRecorder")
+                            let m = MicRecorder(outputDir: session, device: device, gain: gain)
+                            try m.start()
+                            appLog("worker: MicRecorder OK (rate=\(m.sampleRate) ch=\(m.channels))")
+                            appState.mic = m
+                        }
+                    }
+                    if captureSystem {
+                        group.addTask {
+                            appLog("worker: starting SystemRecorder")
+                            let s = SystemRecorder(outputDir: session)
+                            try await s.start()
+                            appLog("worker: SystemRecorder OK")
+                            appState.system = s
+                        }
+                    }
+                    try await group.waitForAll()
                 }
                 appLog("worker: posting WM_RECORD_STARTED")
                 _ = PostMessageW(main, WM_RECORD_STARTED, 0, 0)
