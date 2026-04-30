@@ -29,6 +29,11 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         appState.hwndMain = hwnd
         createControls(parent: hwnd)
         refreshUI()
+        startUpdateCheck(parent: hwnd)
+        return 0
+
+    case WM_UPDATE_AVAILABLE:
+        handleUpdateAvailable(parent: hwnd)
         return 0
 
     case UINT(WM_COMMAND):

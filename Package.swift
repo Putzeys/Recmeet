@@ -86,11 +86,19 @@ let package = Package(
                 .target(name: "RecmeetCoreWindows", condition: .when(platforms: [.windows])),
             ],
             path: "Sources/RecmeetWin32App",
+            exclude: ["recmeet.rc", "recmeet.ico"],
             linkerSettings: [
                 .linkedLibrary("comctl32", .when(platforms: [.windows])),
                 .linkedLibrary("shell32",  .when(platforms: [.windows])),
                 .linkedLibrary("user32",   .when(platforms: [.windows])),
                 .linkedLibrary("gdi32",    .when(platforms: [.windows])),
+                // Build as a real GUI app (no console window). We keep the
+                // CRT entry point so our top-level main.swift code still runs.
+                .unsafeFlags(
+                    ["-Xlinker", "/SUBSYSTEM:WINDOWS",
+                     "-Xlinker", "/ENTRY:mainCRTStartup"],
+                    .when(platforms: [.windows])
+                ),
             ]
         ),
     ]

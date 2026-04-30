@@ -1,0 +1,3 @@
+// Windows resource script. ID 1 (lowest) becomes the executable's default
+// icon shown in Explorer, taskbar, and Alt-Tab.
+1 ICON "recmeet.ico"
