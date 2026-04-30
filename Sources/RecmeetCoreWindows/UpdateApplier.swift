@@ -22,9 +22,9 @@ final class UpdateLog {
         let line = "[\(Date())] \(msg)\n"
         guard let data = line.data(using: .utf8) else { return }
         if let h = try? FileHandle(forWritingTo: url) {
-            try? h.seekToEnd()
-            try? h.write(contentsOf: data)
-            try? h.close()
+            _ = try? h.seekToEnd()
+            _ = try? h.write(contentsOf: data)
+            _ = try? h.close()
         } else {
             try? data.write(to: url)
         }
@@ -93,23 +93,33 @@ public enum WindowsUpdateApplier {
 
         let batPath = zipPath.deletingLastPathComponent().appendingPathComponent("update.bat")
         let batLogPath = zipPath.deletingLastPathComponent().appendingPathComponent("update-bat.log")
+
+        // cmd.exe doesn't accept forward slashes inside `move` / `start`
+        // arguments — those are option markers there. Foundation's URL.path
+        // hands us POSIX-style paths on Swift-Windows, so flip every / to \
+        // before splicing into the batch.
+        let srcPath = newExe.path.replacingOccurrences(of: "/", with: "\\")
+        let dstPath = currentExePath.replacingOccurrences(of: "/", with: "\\")
+        let logPath = batLogPath.path.replacingOccurrences(of: "/", with: "\\")
+
         let bat = """
         @echo off
-        set LOG=\(batLogPath.path)
+        set LOG=\(logPath)
         echo [bat] start %DATE% %TIME% > "%LOG%"
         echo [bat] sleeping 2s >> "%LOG%"
         timeout /t 2 /nobreak >nul
 
-        echo [bat] move "\(newExe.path)" -> "\(currentExePath)" >> "%LOG%"
-        move /y "\(newExe.path)" "\(currentExePath)" >> "%LOG%" 2>&1
+        echo [bat] move SRC: "\(srcPath)" >> "%LOG%"
+        echo [bat] move DST: "\(dstPath)" >> "%LOG%"
+        move /y "\(srcPath)" "\(dstPath)" >> "%LOG%" 2>&1
         if errorlevel 1 (
             echo [bat] MOVE FAILED, errorlevel %errorlevel% >> "%LOG%"
             goto :end
         )
         echo [bat] move OK >> "%LOG%"
 
-        echo [bat] launching "\(currentExePath)" >> "%LOG%"
-        start "" "\(currentExePath)"
+        echo [bat] launching "\(dstPath)" >> "%LOG%"
+        start "" "\(dstPath)"
 
         :end
         echo [bat] done %DATE% %TIME% >> "%LOG%"
