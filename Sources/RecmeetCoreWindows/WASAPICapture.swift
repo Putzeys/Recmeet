@@ -18,6 +18,8 @@ final class WASAPICapture {
 
     private let levelMonitor: MicLevelMonitor?
     private let bytesPerFrame: Int
+    private var outputDir: URL = URL(fileURLWithPath: "/")
+    private var filePrefix: String = ""
 
     private var thread: Thread?
     private let stopLock = NSLock()
@@ -48,6 +50,8 @@ final class WASAPICapture {
         self.channels = format.channels
         self.bytesPerFrame = Int(format.channels) * 2
         Log.info("WASAPICapture: format sr=\(format.sample_rate) ch=\(format.channels)")
+        self.outputDir = outputDir
+        self.filePrefix = filePrefix
 
         Log.info("WASAPICapture: opening WAVChunkWriter dir=\(outputDir.path) prefix=\(filePrefix)")
         do {
@@ -85,6 +89,24 @@ final class WASAPICapture {
         thread = nil
         _ = recmeet_capture_stop(cap)
         writer.close()
+        writeMetadataSidecar()
+    }
+
+    /// Writes `<prefix>_meta.json` next to the chunk WAVs with the very
+    /// first packet's QPCPosition. SessionMixer reads this from both
+    /// recorders and aligns frame 0 to the same wall-clock instant — the
+    /// fix for the "do nada o áudio não tá unificado" symptom.
+    private func writeMetadataSidecar() {
+        let qpc = recmeet_capture_first_qpc(cap)
+        let payload: [String: Any] = [
+            "first_qpc_100ns": qpc,
+            "sample_rate": Int(sampleRate),
+            "channels": Int(channels),
+        ]
+        let url = outputDir.appendingPathComponent("\(filePrefix)_meta.json")
+        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]) {
+            try? data.write(to: url)
+        }
     }
 
     private var shouldStop: Bool {
@@ -100,7 +122,8 @@ final class WASAPICapture {
             var dataPtr: UnsafeMutableRawPointer?
             var frames: UInt32 = 0
             var flags: UInt32 = 0
-            let ret = recmeet_capture_get_packet(cap, &dataPtr, &frames, &flags)
+            var qpc: UInt64 = 0
+            let ret = recmeet_capture_get_packet(cap, &dataPtr, &frames, &flags, &qpc)
             if ret < 0 { break }
             if ret == 0 || frames == 0 {
                 Thread.sleep(forTimeInterval: 0.005)

@@ -74,6 +74,31 @@ public enum SessionMixer {
         let micChannels = Int(micReader?.header.channels ?? 1)
         let sysChannels = Int(sysReader?.header.channels ?? 2)
 
+        // Cross-platform start-time alignment from QPC sidecars (written by
+        // the Windows recorders). The recorder writes <prefix>_meta.json
+        // with first_qpc_100ns; we compute how many frames to skip from the
+        // stream that started earlier so frame 0 of the mix corresponds to
+        // the same wall-clock instant in both inputs.
+        var micSkipFrames = 0
+        var sysSkipFrames = 0
+        if let micQPC = readFirstQPC(in: sessionDir, prefix: "mic"),
+           let sysQPC = readFirstQPC(in: sessionDir, prefix: "system"),
+           micQPC > 0, sysQPC > 0 {
+            let qpcDelta = Int64(bitPattern: micQPC) - Int64(bitPattern: sysQPC)
+            // QPC is in 100-ns units. delta_seconds = qpcDelta / 1e7.
+            // frames_at_48k = delta_seconds * 48000.
+            let framesAt48k = Int(Double(qpcDelta) / 10_000_000.0 * 48000.0)
+            if framesAt48k > 0 {
+                // Mic started LATER than system → trim system head.
+                sysSkipFrames = framesAt48k
+            } else if framesAt48k < 0 {
+                // System started LATER than mic → trim mic head.
+                micSkipFrames = -framesAt48k
+            }
+        }
+        if micSkipFrames > 0 { _ = try micReader?.read(frameCount: micSkipFrames, into: &micBuf) }
+        if sysSkipFrames > 0 { _ = try sysReader?.read(frameCount: sysSkipFrames, into: &sysBuf) }
+
         while true {
             let micRead = try micReader?.read(frameCount: bufFrames, into: &micBuf) ?? 0
             let sysRead = try sysReader?.read(frameCount: bufFrames, into: &sysBuf) ?? 0
@@ -140,6 +165,16 @@ public enum SessionMixer {
             }
         }
         return data
+    }
+
+    private static func readFirstQPC(in dir: URL, prefix: String) -> UInt64? {
+        let url = dir.appendingPathComponent("\(prefix)_meta.json")
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let qpc = json["first_qpc_100ns"] as? UInt64 else {
+            return nil
+        }
+        return qpc
     }
 
     private static func chunks(in dir: URL, prefix: String) -> [URL] {

@@ -113,6 +113,7 @@ typedef struct {
     IAudioClient        *client;
     IAudioCaptureClient *capture;
     recmeet_format_t     format;
+    UINT64               first_qpc_100ns; // 0 until first packet seen
 } cap_impl;
 
 static dev_impl *as_dev(recmeet_device_t h) { return (dev_impl *)h; }
@@ -389,7 +390,7 @@ recmeet_format_t recmeet_capture_format(recmeet_capture_t h) {
     return c->format;
 }
 
-int recmeet_capture_get_packet(recmeet_capture_t h, void **out_data, UINT32 *out_frames, UINT32 *out_flags) {
+int recmeet_capture_get_packet(recmeet_capture_t h, void **out_data, UINT32 *out_frames, UINT32 *out_flags, UINT64 *out_qpc_100ns) {
     cap_impl *c = as_cap(h);
     if (!c || !c->capture || !out_data || !out_frames || !out_flags) return -1;
     UINT32 packet_size = 0;
@@ -400,13 +401,24 @@ int recmeet_capture_get_packet(recmeet_capture_t h, void **out_data, UINT32 *out
     BYTE *data = NULL;
     UINT32 frames = 0;
     DWORD flags = 0;
-    hr = IAudioCaptureClient_GetBuffer(c->capture, &data, &frames, &flags, NULL, NULL);
+    UINT64 device_pos = 0;
+    UINT64 qpc = 0;
+    hr = IAudioCaptureClient_GetBuffer(c->capture, &data, &frames, &flags, &device_pos, &qpc);
     if (FAILED(hr)) return -1;
 
+    if (c->first_qpc_100ns == 0 && qpc != 0) {
+        c->first_qpc_100ns = qpc;
+    }
     *out_data = data;
     *out_frames = frames;
     *out_flags = flags;
+    if (out_qpc_100ns) *out_qpc_100ns = qpc;
     return 1;
+}
+
+UINT64 recmeet_capture_first_qpc(recmeet_capture_t h) {
+    cap_impl *c = as_cap(h);
+    return c ? c->first_qpc_100ns : 0;
 }
 
 void recmeet_capture_release_packet(recmeet_capture_t h, UINT32 frames) {
