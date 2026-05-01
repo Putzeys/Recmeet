@@ -80,4 +80,13 @@ typedef void *recmeet_keepalive_t;
 recmeet_keepalive_t recmeet_keepalive_start(recmeet_device_t render_device);
 void                recmeet_keepalive_stop(recmeet_keepalive_t ka);
 
+// Transcode a 16-bit PCM WAV file into an .m4a/AAC file via the
+// Media Foundation SinkWriter. Returns S_OK on success or an HRESULT
+// describing what went wrong.
+HRESULT recmeet_encode_aac_from_wav(
+    LPCWSTR input_wav_path,
+    LPCWSTR output_m4a_path,
+    UINT32  bitrate_bps   // e.g. 128000 for 128 kbps
+);
+
 #endif // _WIN32

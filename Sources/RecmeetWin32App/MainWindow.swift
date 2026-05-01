@@ -494,8 +494,22 @@ func mergeDecisionMade(merge: Bool, micVolume: Float, systemVolume: Float, keepT
                 systemVolume: systemVolume,
                 keepSeparateTracks: keepTracks
             )
-            let url = try await SessionMixer.merge(sessionDir: session, options: opts)
-            appState.mergedFile = url
+            let mixedWav = try await SessionMixer.merge(sessionDir: session, options: opts)
+            appState.mergedFile = mixedWav
+
+            // Best-effort AAC transcode for a much smaller file
+            // (≈30 MB / hour vs ≈700 MB / hour for the raw WAV).
+            // Keep the WAV in place if encoding fails for any reason.
+            do {
+                let m4a = mixedWav.deletingPathExtension().appendingPathExtension("m4a")
+                try WindowsAACEncoder.encode(inputWAV: mixedWav, outputM4A: m4a)
+                appState.mergedFile = m4a
+                if !keepTracks {
+                    try? FileManager.default.removeItem(at: mixedWav)
+                }
+            } catch {
+                Log.error("AAC encode failed: \(error.localizedDescription)")
+            }
         } catch {
             appState.statusText = "Mix failed: \(error.localizedDescription)"
         }

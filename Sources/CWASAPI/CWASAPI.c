@@ -15,6 +15,9 @@
 #include <propsys.h>
 #include <mmdeviceapi.h>
 #include <audioclient.h>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
@@ -43,6 +46,49 @@ const IID IID_IAudioCaptureClient = {
 const IID IID_IAudioRenderClient = {
     0xF294ACFC, 0x3146, 0x4483,
     { 0xA7, 0xBF, 0xAD, 0xDC, 0xA7, 0xC2, 0x60, 0xE2 }
+};
+
+// Media Foundation GUIDs we use for AAC transcode.
+// Defined manually to avoid linking mfuuid.lib.
+const GUID MFMediaType_Audio_Local = {
+    0x73647561, 0x0000, 0x0010,
+    { 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 }
+};
+const GUID MFAudioFormat_PCM_Local = {
+    0x00000001, 0x0000, 0x0010,
+    { 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 }
+};
+const GUID MFAudioFormat_AAC_Local = {
+    0x00001610, 0x0000, 0x0010,
+    { 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71 }
+};
+const GUID MF_MT_MAJOR_TYPE_Local = {
+    0x48eba18e, 0xf8c9, 0x4687,
+    { 0xbf, 0x11, 0x0a, 0x74, 0xc9, 0xf9, 0x6a, 0x8f }
+};
+const GUID MF_MT_SUBTYPE_Local = {
+    0xf7e34c9a, 0x42e8, 0x4714,
+    { 0xb7, 0x4b, 0xcb, 0x29, 0xd7, 0x2c, 0x35, 0xe5 }
+};
+const GUID MF_MT_AUDIO_NUM_CHANNELS_Local = {
+    0x37e48bf5, 0x645e, 0x4c5b,
+    { 0x89, 0xde, 0xad, 0xa9, 0xe2, 0x9b, 0x69, 0x6a }
+};
+const GUID MF_MT_AUDIO_SAMPLES_PER_SECOND_Local = {
+    0x5faeeae7, 0x0290, 0x4c31,
+    { 0x9e, 0x8a, 0xc5, 0x34, 0xf6, 0x8d, 0x9d, 0xba }
+};
+const GUID MF_MT_AUDIO_AVG_BYTES_PER_SECOND_Local = {
+    0x1aab75c8, 0xcfef, 0x451c,
+    { 0xab, 0x95, 0xac, 0x03, 0x4b, 0x8e, 0x17, 0x31 }
+};
+const GUID MF_MT_AUDIO_BLOCK_ALIGNMENT_Local = {
+    0x322de230, 0x9eeb, 0x43bd,
+    { 0xab, 0x7a, 0xff, 0x41, 0x22, 0x51, 0x54, 0x1d }
+};
+const GUID MF_MT_AUDIO_BITS_PER_SAMPLE_Local = {
+    0xf2deb57f, 0x40fa, 0x4764,
+    { 0xaa, 0x33, 0xed, 0x4f, 0x2d, 0x1f, 0xf6, 0x69 }
 };
 
 // PKEY_Device_FriendlyName, defined manually so we don't need
@@ -477,6 +523,107 @@ recmeet_keepalive_t recmeet_keepalive_start(recmeet_device_t h) {
         return NULL;
     }
     return (recmeet_keepalive_t)k;
+}
+
+// MARK: - AAC encode via Media Foundation
+
+HRESULT recmeet_encode_aac_from_wav(LPCWSTR input_wav_path, LPCWSTR output_m4a_path, UINT32 bitrate_bps) {
+    HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_FULL);
+    if (FAILED(hr)) return hr;
+
+    IMFSourceReader *reader = NULL;
+    IMFSinkWriter   *writer = NULL;
+    IMFMediaType    *pcm_type = NULL;
+    IMFMediaType    *aac_in_type = NULL;
+    IMFMediaType    *aac_out_type = NULL;
+
+    DWORD writer_stream = 0;
+    UINT32 channels = 2;
+    UINT32 sample_rate = 48000;
+
+    hr = MFCreateSourceReaderFromURL(input_wav_path, NULL, &reader);
+    if (FAILED(hr)) goto done;
+
+    // Force the reader to deliver 16-bit PCM frames.
+    hr = MFCreateMediaType(&pcm_type);
+    if (FAILED(hr)) goto done;
+    IMFMediaType_SetGUID(pcm_type, &MF_MT_MAJOR_TYPE_Local, &MFMediaType_Audio_Local);
+    IMFMediaType_SetGUID(pcm_type, &MF_MT_SUBTYPE_Local,    &MFAudioFormat_PCM_Local);
+    hr = IMFSourceReader_SetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_AUDIO_STREAM, NULL, pcm_type);
+    if (FAILED(hr)) goto done;
+
+    // Read what the reader actually negotiated to discover ch / sample rate.
+    IMFMediaType *negotiated = NULL;
+    hr = IMFSourceReader_GetCurrentMediaType(reader, MF_SOURCE_READER_FIRST_AUDIO_STREAM, &negotiated);
+    if (SUCCEEDED(hr) && negotiated) {
+        IMFMediaType_GetUINT32(negotiated, &MF_MT_AUDIO_NUM_CHANNELS_Local, &channels);
+        IMFMediaType_GetUINT32(negotiated, &MF_MT_AUDIO_SAMPLES_PER_SECOND_Local, &sample_rate);
+        IMFMediaType_Release(negotiated);
+    }
+
+    hr = MFCreateSinkWriterFromURL(output_m4a_path, NULL, NULL, &writer);
+    if (FAILED(hr)) goto done;
+
+    // Output: AAC, same channel count and sample rate as source.
+    hr = MFCreateMediaType(&aac_out_type);
+    if (FAILED(hr)) goto done;
+    IMFMediaType_SetGUID(aac_out_type, &MF_MT_MAJOR_TYPE_Local, &MFMediaType_Audio_Local);
+    IMFMediaType_SetGUID(aac_out_type, &MF_MT_SUBTYPE_Local,    &MFAudioFormat_AAC_Local);
+    IMFMediaType_SetUINT32(aac_out_type, &MF_MT_AUDIO_NUM_CHANNELS_Local,        channels);
+    IMFMediaType_SetUINT32(aac_out_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND_Local,  sample_rate);
+    IMFMediaType_SetUINT32(aac_out_type, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND_Local, bitrate_bps / 8);
+    IMFMediaType_SetUINT32(aac_out_type, &MF_MT_AUDIO_BITS_PER_SAMPLE_Local,     16);
+    hr = IMFSinkWriter_AddStream(writer, aac_out_type, &writer_stream);
+    if (FAILED(hr)) goto done;
+
+    // Input to the sink writer: matches what the reader produces (PCM).
+    hr = MFCreateMediaType(&aac_in_type);
+    if (FAILED(hr)) goto done;
+    IMFMediaType_SetGUID(aac_in_type, &MF_MT_MAJOR_TYPE_Local, &MFMediaType_Audio_Local);
+    IMFMediaType_SetGUID(aac_in_type, &MF_MT_SUBTYPE_Local,    &MFAudioFormat_PCM_Local);
+    IMFMediaType_SetUINT32(aac_in_type, &MF_MT_AUDIO_NUM_CHANNELS_Local,        channels);
+    IMFMediaType_SetUINT32(aac_in_type, &MF_MT_AUDIO_SAMPLES_PER_SECOND_Local,  sample_rate);
+    IMFMediaType_SetUINT32(aac_in_type, &MF_MT_AUDIO_BITS_PER_SAMPLE_Local,     16);
+    IMFMediaType_SetUINT32(aac_in_type, &MF_MT_AUDIO_BLOCK_ALIGNMENT_Local,     channels * 2);
+    IMFMediaType_SetUINT32(aac_in_type, &MF_MT_AUDIO_AVG_BYTES_PER_SECOND_Local, sample_rate * channels * 2);
+    hr = IMFSinkWriter_SetInputMediaType(writer, writer_stream, aac_in_type, NULL);
+    if (FAILED(hr)) goto done;
+
+    hr = IMFSinkWriter_BeginWriting(writer);
+    if (FAILED(hr)) goto done;
+
+    // Pump samples from reader to writer.
+    for (;;) {
+        DWORD stream_index = 0, flags = 0;
+        LONGLONG ts = 0;
+        IMFSample *sample = NULL;
+        hr = IMFSourceReader_ReadSample(
+            reader,
+            MF_SOURCE_READER_FIRST_AUDIO_STREAM,
+            0, &stream_index, &flags, &ts, &sample
+        );
+        if (FAILED(hr)) break;
+        if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
+            if (sample) IMFSample_Release(sample);
+            break;
+        }
+        if (sample) {
+            IMFSample_SetSampleTime(sample, ts);
+            IMFSinkWriter_WriteSample(writer, writer_stream, sample);
+            IMFSample_Release(sample);
+        }
+    }
+
+    if (writer) IMFSinkWriter_Finalize(writer);
+
+done:
+    if (aac_in_type)  IMFMediaType_Release(aac_in_type);
+    if (aac_out_type) IMFMediaType_Release(aac_out_type);
+    if (pcm_type)     IMFMediaType_Release(pcm_type);
+    if (writer)       IMFSinkWriter_Release(writer);
+    if (reader)       IMFSourceReader_Release(reader);
+    MFShutdown();
+    return hr;
 }
 
 void recmeet_keepalive_stop(recmeet_keepalive_t h) {

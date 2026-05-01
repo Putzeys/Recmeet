@@ -42,7 +42,9 @@ let package = Package(
             ],
             path: "Sources/RecmeetCoreWindows",
             linkerSettings: [
-                .linkedLibrary("ole32", .when(platforms: [.windows])),
+                .linkedLibrary("ole32",       .when(platforms: [.windows])),
+                .linkedLibrary("mfplat",      .when(platforms: [.windows])),
+                .linkedLibrary("mfreadwrite", .when(platforms: [.windows])),
             ]
         ),
 
