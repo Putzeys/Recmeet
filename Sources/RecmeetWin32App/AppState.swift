@@ -34,11 +34,16 @@ final class AppState {
     var hwndDeviceCombo: HWND?
     var hwndGainSlider: HWND?
     var hwndGainLabel: HWND?
+    var hwndLevelMeter: HWND?
     var hwndOutputLabel: HWND?
     var hwndOpenFolderBtn: HWND?
     var hwndRecordBtn: HWND?
     var hwndStatusLabel: HWND?
     var hwndElapsedLabel: HWND?
+
+    /// Live mic level monitor — fed by WASAPICapture, drained by the UI timer.
+    var levelMonitor: MicLevelMonitor?
+    var smoothedLevel: Float = 0  // post-decay 0..1
 
     init() {
         appLog("AppState.init — recmeet \(RECMEET_CURRENT_VERSION)")

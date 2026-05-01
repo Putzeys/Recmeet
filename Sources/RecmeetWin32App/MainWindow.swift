@@ -14,6 +14,7 @@ let ID_OPEN_FOLDER_BTN:  WORD = 104
 let ID_RECORD_BTN:       WORD = 105
 
 let ID_TIMER_ELAPSED: UINT_PTR = 1
+let ID_TIMER_LEVEL:   UINT_PTR = 2
 
 // WM_USER is imported as Int32; promote before adding offsets.
 let WM_RECORD_STARTED: UINT = UINT(WM_USER) + 1
@@ -76,6 +77,8 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
     case UINT(WM_TIMER):
         if wParam == ID_TIMER_ELAPSED {
             setControlText(appState.hwndElapsedLabel, appState.elapsedFormatted)
+        } else if wParam == ID_TIMER_LEVEL {
+            updateLevelMeter()
         }
         return 0
 
@@ -83,12 +86,16 @@ let windowProc: WNDPROC = { hwnd, msg, wParam, lParam -> LRESULT in
         appState.isRecording = true
         appState.startTime = Date()
         SetTimer(hwnd, ID_TIMER_ELAPSED, 1000, nil)
+        SetTimer(hwnd, ID_TIMER_LEVEL, 33, nil)  // ~30 fps VU meter
         appState.statusText = "Recording…"
         refreshUI()
         return 0
 
     case WM_RECORD_STOPPED:
         KillTimer(hwnd, ID_TIMER_ELAPSED)
+        KillTimer(hwnd, ID_TIMER_LEVEL)
+        appState.smoothedLevel = 0
+        SendMessageW(appState.hwndLevelMeter, UINT(PBM_SETPOS), 0, 0)
         appState.isRecording = false
         let bothCaptured = (wParam != 0)
         if bothCaptured, let session = appState.sessionPath {
@@ -194,43 +201,57 @@ private func createControls(parent: HWND?) {
                                   style: 0,
                                   x: 360, y: 104, w: 60, h: 18)
 
+    // VU meter — live mic level. PROGRESS_BAR with PBS_SMOOTH gives a
+    // continuous bar instead of segments.
+    _ = make("STATIC", "Level", style: 0, x: 20, y: 134, w: 60, h: 16)
+    PROGRESS_CLASS.withCString(encodedAs: UTF16.self) { wcls in
+        appState.hwndLevelMeter = CreateWindowExW(
+            0, wcls, nil,
+            DWORD(WS_CHILD | WS_VISIBLE | PBS_SMOOTH),
+            70, 132, 350, 14,
+            parent, nil, hInst, nil
+        )
+    }
+    SendMessageW(appState.hwndLevelMeter, UINT(PBM_SETRANGE32), 0, LPARAM(1000))
+    SendMessageW(appState.hwndLevelMeter, UINT(PBM_SETPOS), 0, 0)
+
     // System audio section.
     _ = make("STATIC", "System audio",
-             style: 0, x: 20, y: 144, w: 200, h: 18)
+             style: 0, x: 20, y: 162, w: 200, h: 18)
 
     appState.hwndSysCheck = make("BUTTON", "Record system audio (loopback)",
                                  style: DWORD(BS_AUTOCHECKBOX),
-                                 x: 20, y: 166, w: 320, h: 22,
+                                 x: 20, y: 184, w: 320, h: 22,
                                  id: ID_SYS_CHECK)
     SendMessageW(appState.hwndSysCheck, UINT(BM_SETCHECK),
                  WPARAM(BST_CHECKED), 0)
 
     // Output folder section.
     _ = make("STATIC", "Output folder",
-             style: 0, x: 20, y: 204, w: 200, h: 18)
+             style: 0, x: 20, y: 222, w: 200, h: 18)
 
     appState.hwndOutputLabel = make("STATIC", appState.outputDir.path,
-                                    style: 0, x: 20, y: 226, w: 320, h: 18)
+                                    style: 0, x: 20, y: 244, w: 320, h: 18)
 
     appState.hwndOpenFolderBtn = make("BUTTON", "Open folder",
                                       style: 0,
-                                      x: 350, y: 222, w: 100, h: 26,
+                                      x: 350, y: 240, w: 100, h: 26,
                                       id: ID_OPEN_FOLDER_BTN)
 
     // Record button + elapsed label.
     appState.hwndRecordBtn = make("BUTTON", "Record",
                                   style: DWORD(BS_DEFPUSHBUTTON),
-                                  x: 20, y: 268, w: 280, h: 38,
+                                  x: 20, y: 286, w: 280, h: 38,
                                   id: ID_RECORD_BTN)
 
     appState.hwndElapsedLabel = make("STATIC", "00:00:00",
                                      style: 0,
-                                     x: 320, y: 276, w: 130, h: 24)
+                                     x: 320, y: 294, w: 130, h: 24)
 
     // Status line.
     appState.hwndStatusLabel = make("STATIC", appState.statusText,
                                     style: 0,
-                                    x: 20, y: 320, w: 430, h: 18)
+                                    x: 20, y: 338, w: 430, h: 18)
 }
 
 // MARK: - Command routing
@@ -291,6 +312,17 @@ private func updateGainFromSlider() {
     appState.gainPercent = Int(pos)
     appState.mic?.gain = Float(appState.gainPercent) / 100
     setControlText(appState.hwndGainLabel, "\(appState.gainPercent)%")
+}
+
+/// Polled at ~30Hz from WM_TIMER. Drains the latest peak from the
+/// MicLevelMonitor, applies a simple decay so the meter falls smoothly,
+/// and pushes the value into the PROGRESS_BAR (range 0..1000).
+private func updateLevelMeter() {
+    let monitor = appState.levelMonitor
+    let peak = monitor?.drainPeak() ?? 0
+    appState.smoothedLevel = max(peak, appState.smoothedLevel * 0.85)
+    let pos = WPARAM(min(1000, max(0, Int(appState.smoothedLevel * 1000))))
+    SendMessageW(appState.hwndLevelMeter, UINT(PBM_SETPOS), pos, 0)
 }
 
 func refreshUI() {
@@ -367,11 +399,18 @@ private func startStopRequested(start: Bool) {
                 // loopback got going (especially after we added the render
                 // keepalive), and the mixer aligning frame 0 of each track
                 // baked that gap right into the merged audio.
+                let levelMonitor = captureMic ? MicLevelMonitor() : nil
+                appState.levelMonitor = levelMonitor
                 try await withThrowingTaskGroup(of: Void.self) { group in
                     if captureMic {
                         group.addTask {
                             appLog("worker: starting MicRecorder")
-                            let m = MicRecorder(outputDir: session, device: device, gain: gain)
+                            let m = MicRecorder(
+                                outputDir: session,
+                                device: device,
+                                gain: gain,
+                                levelMonitor: levelMonitor
+                            )
                             try m.start()
                             appLog("worker: MicRecorder OK (rate=\(m.sampleRate) ch=\(m.channels))")
                             appState.mic = m
@@ -421,6 +460,7 @@ private func startStopRequested(start: Bool) {
         let system = appState.system
         appState.mic = nil
         appState.system = nil
+        appState.levelMonitor = nil
         appState.startTime = nil
         let bothCaptured = (mic != nil) && (system != nil)
 
