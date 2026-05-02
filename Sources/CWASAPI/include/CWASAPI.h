@@ -57,12 +57,23 @@ recmeet_format_t  recmeet_capture_format(recmeet_capture_t cap);
 //   returns  0: no packet currently available — caller should sleep briefly
 //              and try again.
 //   returns <0: capture error; treat as fatal for the session.
+//
+// `out_qpc_100ns` (optional, may be NULL) receives the QPCPosition of the
+// first frame in this packet — Windows' high-resolution wall-clock anchor
+// in 100-nanosecond units. We capture the very first packet's QPC so the
+// mixer can align two streams that started at slightly different real
+// times.
 int  recmeet_capture_get_packet(recmeet_capture_t cap,
                                 void **out_data,
                                 UINT32 *out_frames,
-                                UINT32 *out_flags);
+                                UINT32 *out_flags,
+                                UINT64 *out_qpc_100ns);
 void recmeet_capture_release_packet(recmeet_capture_t cap, UINT32 frames);
 void recmeet_capture_release(recmeet_capture_t cap);
+
+/// Returns the QPCPosition (100ns) of the first packet ever delivered by
+/// this capture session, or 0 if none yet.
+UINT64 recmeet_capture_first_qpc(recmeet_capture_t cap);
 
 // Bit flags returned in `out_flags`.
 extern const UINT32 recmeet_AUDCLNT_BUFFERFLAGS_SILENT;
@@ -79,5 +90,14 @@ typedef void *recmeet_keepalive_t;
 
 recmeet_keepalive_t recmeet_keepalive_start(recmeet_device_t render_device);
 void                recmeet_keepalive_stop(recmeet_keepalive_t ka);
+
+// Transcode a 16-bit PCM WAV file into an .m4a/AAC file via the
+// Media Foundation SinkWriter. Returns S_OK on success or an HRESULT
+// describing what went wrong.
+HRESULT recmeet_encode_aac_from_wav(
+    LPCWSTR input_wav_path,
+    LPCWSTR output_m4a_path,
+    UINT32  bitrate_bps   // e.g. 128000 for 128 kbps
+);
 
 #endif // _WIN32

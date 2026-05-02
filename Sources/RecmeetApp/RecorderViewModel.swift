@@ -213,6 +213,21 @@ final class RecorderViewModel: ObservableObject {
                 Task { @MainActor in self.mixingProgress = p }
             }
             mergedFile = result
+
+            // Transcode to AAC for a 20×-smaller, transcription-ready file.
+            // Best-effort: if it fails, the WAV stays.
+            do {
+                let m4a = result.deletingPathExtension().appendingPathExtension("m4a")
+                try await AppleAACEncoder.encode(inputWAV: result, outputM4A: m4a)
+                mergedFile = m4a
+                if !keepSeparateTracks {
+                    try? FileManager.default.removeItem(at: result)
+                }
+            } catch {
+                // Keep the WAV as the merged file; just log.
+                Log.error("AAC encode failed: \(error.localizedDescription)")
+            }
+
             showMergeSheet = false
         } catch {
             errorMessage = "Mix failed: \(error.localizedDescription)"
