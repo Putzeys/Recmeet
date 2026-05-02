@@ -64,7 +64,12 @@ popd
 
 echo.
 echo === Package OK ===
-dir "%DIST%\*.exe" "%DIST%\*.dll" 2>nul | find "File(s)"
+echo Output dir: %DIST%
+echo Zip:        dist\recmeet-windows.zip
 echo.
 echo Local test: open "%DIST%\recmeet.exe" in Explorer and double-click.
-echo Upload:     gh release upload v0.4.0 dist\recmeet-windows.zip --clobber --repo Putzeys/Recmeet
+echo Upload:     gh release upload vX.Y.Z dist\recmeet-windows.zip --clobber --repo Putzeys/Recmeet
+REM Force errorlevel back to 0 — the last cmd above could have set 1 in some
+REM locales (e.g. `dir | find "File(s)"` returning non-zero on pt-BR systems
+REM where dir prints "arquivo(s)").
+exit /b 0
